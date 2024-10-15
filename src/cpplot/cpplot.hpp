@@ -450,8 +450,13 @@ namespace detail {
         }
 
         Figure figure(std::optional<std::size_t> id = {}) {
-            const std::size_t fig_id = id.value_or(_get_unused_fig_id());
+            if (id.has_value() && _figure_exists(*id)) {
+                PyObjectWrapper fig = PyObject_CallMethod(_mpl, "figure", "i", id);
+                PyObjectWrapper axis = PyObject_CallMethod(_mpl, "gca", nullptr);
+                return Figure{_mpl, fig, axis};
+            }
 
+            const std::size_t fig_id = id.value_or(_get_unused_fig_id());
             PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
                 PyObjectWrapper function = PyObject_GetAttrString(_mpl, "subplots");
                 if (!function) return nullptr;
@@ -511,11 +516,16 @@ namespace detail {
                 throw std::runtime_error("Could not import matplotlib.");
         }
 
-        std::size_t _get_unused_fig_id() const {
+        std::size_t _get_unused_fig_id() {
             std::size_t id = 0;
-            while (_figure_ids.count(id))
+            while (_figure_exists(id))
                 id++;
+            _figure_ids.insert(id);
             return id;
+        }
+
+        bool _figure_exists(std::size_t id) const {
+            return _figure_ids.count(id);
         }
 
         PyObjectWrapper _mpl{nullptr};
