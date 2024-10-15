@@ -152,12 +152,13 @@ namespace detail {
         })};
     }
 
-    template<typename T>
-    PyObjectWrapper as_pylist(const std::vector<T>& v) {
+    template<typename R>
+    PyObjectWrapper as_pylist(const R& range) {
         return pycall([&] () {
-            PyObject* list = PyList_New(v.size());
-            for (std::size_t i = 0; i < v.size(); ++i)
-                PyList_SetItem(list, i, value_to_pyobject(v[i]).release());
+            PyObject* list = PyList_New(std::size(range));
+            std::size_t i = 0;
+            for (const auto& value : range)
+                PyList_SetItem(list, i++, value_to_pyobject(value).release());
             return list;
         });
     }

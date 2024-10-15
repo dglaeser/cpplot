@@ -1,3 +1,5 @@
+#include <list>
+
 #include <boost/ut.hpp>
 
 #include <cpplot/cpplot.hpp>
@@ -14,6 +16,15 @@ int main() {
             LinePlot::from(
                 x = std::vector{1.0, 2.0, 3.0},
                 y = std::vector{3.0, 4.0, 5.0}
+            )
+        ));
+    };
+
+    "plot_values_from_list"_test = [&] () {
+        expect(figure().plot(
+            LinePlot::from(
+                x = std::list{1.0, 2.0, 3.0},
+                y = std::list{3.0, 4.0, 5.0}
             )
         ));
     };
