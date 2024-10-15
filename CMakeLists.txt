@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 
 project(cpplot VERSION 0.1)
+option(CPPLOT_INCLUDE_TESTS "Control whether or not to include the test suite" ON)
 
 include(GNUInstallDirs)
 find_package(Python COMPONENTS Interpreter Development)
@@ -15,5 +16,7 @@ target_include_directories(cpplot
 # Alias to be used in test suite or when included as sub-project
 add_library(cpplot::cpplot ALIAS cpplot)
 
-enable_testing()
-add_subdirectory(test)
+if (CPPLOT_INCLUDE_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif ()
