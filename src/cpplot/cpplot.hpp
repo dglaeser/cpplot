@@ -284,11 +284,16 @@ class Kwargs : private T... {
         if constexpr (sizeof...(T) == 0)
             return nullptr;
 
+        const auto as_buildvalue_arg = detail::OverloadSet{
+            [] (const std::string& s) { return s.c_str(); },
+            [] (const auto& arg) { return arg; }
+        };
+
         std::string format;
         (..., (format += ",s:" + detail::kwargs_format_for(get(typename T::KeyType{}))));
         format = "{" + format.substr(1) + "}";
         PyObject* result = std::apply(
-            [&] (const auto&... args) { return Py_BuildValue(format.c_str(), args...); },
+            [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
             std::tuple_cat(std::tuple{T::KeyType::name().c_str(), get(typename T::KeyType{})}...)
         );
         if (!result)
