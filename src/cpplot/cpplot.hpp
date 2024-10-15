@@ -452,8 +452,12 @@ namespace detail {
         Figure figure(std::optional<std::size_t> id = {}) {
             const std::size_t fig_id = id.value_or(_get_unused_fig_id());
 
-            PyObjectWrapper fig_axis_tuple = pycall([&] () {
-                return PyObject_CallMethod(_mpl, "subplots", nullptr);
+            PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
+                PyObjectWrapper function = PyObject_GetAttrString(_mpl, "subplots");
+                if (!function) return nullptr;
+                PyObjectWrapper args = PyTuple_New(0);
+                PyObjectWrapper kwargs = Py_BuildValue("{s:i}", "num", fig_id);
+                return PyObject_Call(function, args, kwargs);
             });
 
             assert(pycall([&] () { return PyTuple_Check(fig_axis_tuple); }));
