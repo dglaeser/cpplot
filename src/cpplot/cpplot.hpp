@@ -1,11 +1,9 @@
-#include <type_traits>
-#include <utility>
 #include <stdexcept>
-#include <optional>
-#include <memory>
-#include <vector>
-#include <iostream>
+#include <type_traits>
 #include <algorithm>
+#include <utility>
+#include <optional>
+#include <vector>
 #include <set>
 
 #ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
