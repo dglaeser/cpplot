@@ -5,35 +5,47 @@
 using namespace boost::ut;
 
 int main() {
+    using namespace cpplot;
 
-    // Todo: multiple instances seem to faile
-    cpplot::Plot p{};
+    set_style("ggplot");
 
     "plot_values"_test = [&] () {
-        expect(p.plot_to(
-            p.figure().value(),
-            std::vector{1.0, 2.0, 3.0},
-            std::vector{3.0, 4.0, 5.0}
+        expect(figure().plot(
+            LinePlot::from(
+                x = std::vector{1.0, 2.0, 3.0},
+                y = std::vector{3.0, 4.0, 5.0}
+            )
         ));
     };
 
     "plot_values_with_label"_test = [&] () {
-        expect(p.plot_to(
-            p.figure().value(),
-            std::vector{1.0, 2.0, 3.0},
-            std::vector{3.0, 4.0, 5.0},
-            {.label = "label"}
+        expect(figure().plot(
+            LinePlot::from(
+                x = std::vector{1.0, 2.0, 3.0},
+                y = std::vector{3.0, 4.0, 5.0}
+            ),
+            with(label = "some_label")
         ));
     };
 
     "plot_values_with_color"_test = [&] () {
-        expect(p.plot_to(
-            p.figure().value(),
-            std::vector{1.0, 2.0, 3.0},
-            std::vector{3.0, 4.0, 5.0},
-            {.color = "r"}
+        expect(figure().plot(
+            LinePlot::from(
+                x = std::vector{1.0, 2.0, 3.0},
+                y = std::vector{3.0, 4.0, 5.0}
+            ),
+            with(color = "blue")
         ));
     };
+
+    "plot_image"_test = [&] () {
+        set_style("default");
+        expect(figure().set_image(
+            std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
+        ));
+    };
+
+    show_all();
 
     return 0;
 }
