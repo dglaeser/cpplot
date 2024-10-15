@@ -27,7 +27,7 @@ jobs:
       # install of make can be omitted once the container provides it per default
       - name: build-tests
         run: |
-          cmake -B build
+          cmake -DCPPLOT_DISABLE_PYTHON_DEBUG_BUILD=ON -B build
           cmake --build build
 
       - name: run-tests
