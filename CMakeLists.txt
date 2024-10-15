@@ -4,7 +4,7 @@ project(cpplot VERSION 0.1)
 option(CPPLOT_INCLUDE_TESTS "Control whether or not to include the test suite" ON)
 
 include(GNUInstallDirs)
-find_package(Python COMPONENTS Interpreter Development)
+find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development)
 add_library(cpplot INTERFACE)
 target_compile_features(cpplot INTERFACE cxx_std_23)
 target_link_libraries(cpplot INTERFACE Python::Python)
