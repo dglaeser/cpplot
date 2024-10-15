@@ -8,7 +8,17 @@
 #include <algorithm>
 #include <set>
 
-#include <Python.h>
+#ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
+    #ifdef _DEBUG
+        #undef _DEBUG
+        #include <Python.h>
+        #define _DEBUG
+    #else
+        #include <Python.h>
+    #endif
+#else
+    #include <Python.h>
+#endif
 
 
 namespace cpplot {
