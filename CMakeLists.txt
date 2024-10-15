@@ -10,7 +10,7 @@ add_library(cpplot INTERFACE)
 target_compile_features(cpplot INTERFACE cxx_std_23)
 target_link_libraries(cpplot INTERFACE Python::Python)
 if (CPPLOT_DISABLE_PYTHON_DEBUG_BUILD)
-    target_compile_options(cpplot INTERFACE CPPLOT_DISABLE_PYTHON_DEBUG_BUILD)
+    target_compile_definitions(cpplot INTERFACE CPPLOT_DISABLE_PYTHON_DEBUG_BUILD)
 endif ()
 target_include_directories(cpplot
     INTERFACE $<BUILD_INTERFACE:${cpplot_SOURCE_DIR}/src>
