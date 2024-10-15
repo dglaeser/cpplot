@@ -45,7 +45,7 @@ int main() {
         ));
     };
 
-    show_all();
+    show_all(false);
 
     return 0;
 }

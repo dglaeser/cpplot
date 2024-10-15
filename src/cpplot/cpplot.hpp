@@ -466,8 +466,26 @@ namespace detail {
             return Figure{_mpl, fig, axis};
         }
 
-        void show_all() const {
-            pycall([&] () { PyObject_CallMethod(_mpl, "show", nullptr); });
+        void show_all(std::optional<bool> block) const {
+            pycall([&] () {
+                PyObjectWrapper function = PyObject_GetAttrString(_mpl, "show");
+                if (!function) {
+                    PyErr_Print();
+                    return;
+                }
+
+                PyObject* pyblock = block.has_value() ? (*block ? Py_True : Py_False) : Py_None;
+                PyObjectWrapper args = PyTuple_New(0);
+                PyObjectWrapper kwargs = Py_BuildValue("{s:O}", "block", pyblock);
+                if (!kwargs) {
+                    PyErr_Print();
+                    return;
+                }
+
+                PyObjectWrapper result = PyObject_Call(function, args, kwargs);
+                if (!result)
+                    PyErr_Print();
+            });
         }
 
         bool use_style(const std::string& name) {
@@ -509,8 +527,8 @@ Figure figure(std::optional<std::size_t> id = {}) {
 }
 
 //! Show all figures
-void show_all() {
-    detail::MPLWrapper::instance().show_all();
+void show_all(std::optional<bool> block = {}) {
+    detail::MPLWrapper::instance().show_all(block);
 }
 
 //! Set a matplotlib style to be used in newly created figures
