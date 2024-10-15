@@ -186,7 +186,7 @@ class KeyValuePair {
     KeyValuePair(KeyValuePair&&) = default;
 
     template<typename V>
-    explicit constexpr KeyValuePair(const Key& key, V&& value) noexcept
+    explicit constexpr KeyValuePair(const Key&, V&& value) noexcept
     : _value{std::forward<V>(value)} {
         static_assert(std::is_same_v<std::remove_cvref_t<Value>, std::remove_cvref_t<V>>);
     }
