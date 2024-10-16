@@ -85,18 +85,23 @@ int main() {
 
     "get_all"_test = [&] () {
         const auto ids = get_all_figure_ids();
-        const auto figs = get_all_figures();
+        auto figs = get_all_figures();
         expect(eq(ids.size(), figs.size()));
         expect(std::all_of(figs.begin(), figs.end(), [&] (const auto& fig) {
             return std::count(ids.begin(), ids.end(), fig.id());
         }));
+        for (auto& fig : figs)
+            fig.close();
+        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
     };
 
     "close_all"_test = [] () {
         figure();
-        expect(get_all_figure_ids().size() > 0);
+        figure();
+        figure();
+        expect(ge(get_all_figure_ids().size(), std::size_t{3}));
         close_all_figures();
-        expect(get_all_figure_ids().size() == 0);
+        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
     };
 
     show_all_figures(false);
