@@ -92,7 +92,7 @@ int main() {
         }));
     };
 
-    show_all(false);
+    show_all_figures(false);
 
     return 0;
 }

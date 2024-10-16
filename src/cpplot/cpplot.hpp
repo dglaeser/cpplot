@@ -595,7 +595,7 @@ bool figure_exists(std::size_t id) {
 }
 
 //! Show all figures
-void show_all(std::optional<bool> block = {}) {
+void show_all_figures(std::optional<bool> block = {}) {
     detail::MPLWrapper::instance().show_all(block);
 }
 
