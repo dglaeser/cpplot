@@ -441,6 +441,10 @@ class Figure {
     , _axis{axis}
     {}
 
+    std::size_t id() const {
+        return _id;
+    }
+
     template<typename... Args>
     bool plot(Args&&... args) {
         return Axis{_mpl, _axis}.add(std::forward<Args>(args)...);
@@ -505,8 +509,24 @@ namespace detail {
         bool figure_exists(std::size_t id) const {
             return pycall([&] () {
                 PyObjectWrapper result = PyObject_CallMethod(_mpl, "fignum_exists", "i", id);
-                assert(PyBool_Check(result));
                 return result.get() == Py_True;
+            });
+        }
+
+        std::vector<std::size_t> get_fig_ids() const {
+            return pycall([&] () {
+                PyObjectWrapper result = PyObject_CallMethod(_mpl, "get_fignums", nullptr);
+                assert(PyList_Check(result));
+
+                const std::size_t size = PyList_Size(result);
+                std::vector<std::size_t> ids; ids.reserve(size);
+                for (std::size_t i = 0; i < size; ++i) {
+                    PyObjectWrapper item = PyList_GetItem(result, i);
+                    assert(PyLong_Check(item));
+                    ids.push_back(PyLong_AsLong(item));
+                }
+
+                return ids;
             });
         }
 
@@ -577,6 +597,20 @@ bool figure_exists(std::size_t id) {
 //! Show all figures
 void show_all(std::optional<bool> block = {}) {
     detail::MPLWrapper::instance().show_all(block);
+}
+
+//! Get the ids of all registered figures
+std::vector<std::size_t> get_all_figure_ids() {
+    return detail::MPLWrapper::instance().get_fig_ids();
+}
+
+//! Get all registered figures
+std::vector<Figure> get_all_figures() {
+    const auto ids = get_all_figure_ids();
+    std::vector<Figure> figs; figs.reserve(ids.size());
+    for (auto id : ids)
+        figs.push_back(figure(id));
+    return figs;
 }
 
 //! Set a matplotlib style to be used in newly created figures

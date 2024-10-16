@@ -1,4 +1,5 @@
 #include <list>
+#include <algorithm>
 
 #include <boost/ut.hpp>
 
@@ -80,6 +81,15 @@ int main() {
         expect(figure().set_image(
             std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
         ));
+    };
+
+    "get_all"_test = [&] () {
+        const auto ids = get_all_figure_ids();
+        const auto figs = get_all_figures();
+        expect(eq(ids.size(), figs.size()));
+        expect(std::all_of(figs.begin(), figs.end(), [&] (const auto& fig) {
+            return std::count(ids.begin(), ids.end(), fig.id());
+        }));
     };
 
     show_all(false);
