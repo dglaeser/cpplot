@@ -11,6 +11,22 @@ int main() {
 
     set_style("ggplot");
 
+    "plot_fig_id"_test = [&] () {
+        expect(!figure_exists(42));
+        figure(42);
+        expect(figure_exists(42));
+    };
+
+    "plot_fig_close"_test = [&] () {
+        expect(!figure_exists(43));
+        auto fig = figure(43);
+        expect(figure_exists(43));
+        expect(fig.close());
+        expect(!figure_exists(43));
+        figure(43);
+        expect(figure_exists(43));
+    };
+
     "plot_values"_test = [&] () {
         expect(figure().plot(
             LinePlot::from(
