@@ -92,6 +92,13 @@ int main() {
         }));
     };
 
+    "close_all"_test = [] () {
+        figure();
+        expect(get_all_figure_ids().size() > 0);
+        close_all_figures();
+        expect(get_all_figure_ids().size() == 0);
+    };
+
     show_all_figures(false);
 
     return 0;

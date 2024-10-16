@@ -552,6 +552,12 @@ namespace detail {
             });
         }
 
+        void close_all() const {
+            pycall([&] () {
+                PyObjectWrapper{PyObject_CallMethod(_mpl, "close", "s", "all")};
+            });
+        }
+
         bool use_style(const std::string& name) {
             return pycall([&] () -> bool {
                 if (!_mpl) return false;
@@ -597,6 +603,11 @@ bool figure_exists(std::size_t id) {
 //! Show all figures
 void show_all_figures(std::optional<bool> block = {}) {
     detail::MPLWrapper::instance().show_all(block);
+}
+
+//! Close all figures
+void close_all_figures() {
+    detail::MPLWrapper::instance().close_all();
 }
 
 //! Get the ids of all registered figures
