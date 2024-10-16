@@ -1,4 +1,5 @@
 #include <list>
+#include <algorithm>
 
 #include <boost/ut.hpp>
 
@@ -10,6 +11,22 @@ int main() {
     using namespace cpplot;
 
     set_style("ggplot");
+
+    "plot_fig_id"_test = [&] () {
+        expect(!figure_exists(42));
+        figure(42);
+        expect(figure_exists(42));
+    };
+
+    "plot_fig_close"_test = [&] () {
+        expect(!figure_exists(43));
+        auto fig = figure(43);
+        expect(figure_exists(43));
+        expect(fig.close());
+        expect(!figure_exists(43));
+        figure(43);
+        expect(figure_exists(43));
+    };
 
     "plot_values"_test = [&] () {
         expect(figure().plot(
@@ -66,7 +83,28 @@ int main() {
         ));
     };
 
-    show_all(false);
+    "get_all"_test = [&] () {
+        const auto ids = get_all_figure_ids();
+        auto figs = get_all_figures();
+        expect(eq(ids.size(), figs.size()));
+        expect(std::all_of(figs.begin(), figs.end(), [&] (const auto& fig) {
+            return std::count(ids.begin(), ids.end(), fig.id());
+        }));
+        for (auto& fig : figs)
+            fig.close();
+        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
+    };
+
+    "close_all"_test = [] () {
+        figure();
+        figure();
+        figure();
+        expect(ge(get_all_figure_ids().size(), std::size_t{3}));
+        close_all_figures();
+        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
+    };
+
+    show_all_figures(false);
 
     return 0;
 }

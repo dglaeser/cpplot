@@ -4,7 +4,6 @@
 #include <utility>
 #include <optional>
 #include <vector>
-#include <set>
 
 #ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
     #ifdef _DEBUG
@@ -99,6 +98,10 @@ class PyObjectWrapper {
         PyObject* tmp = _p;
         _p = nullptr;
         return tmp;
+    }
+
+    PyObject* get() {
+        return _p;
     }
 
     operator PyObject*() const {
@@ -428,13 +431,19 @@ class Axis {
 //! Class to represent a figure
 class Figure {
  public:
-    explicit Figure(PyObjectWrapper mpl,
+    explicit Figure(std::size_t id,
+                    PyObjectWrapper mpl,
                     PyObjectWrapper fig,
                     PyObjectWrapper axis)
-    : _mpl{mpl}
+    : _id{id}
+    , _mpl{mpl}
     , _fig{fig}
     , _axis{axis}
     {}
+
+    std::size_t id() const {
+        return _id;
+    }
 
     template<typename... Args>
     bool plot(Args&&... args) {
@@ -446,7 +455,15 @@ class Figure {
         return Axis{_mpl, _axis}.set_image(image);
     }
 
+    bool close() {
+        return detail::pycall([&] () {
+            PyObjectWrapper result = PyObject_CallMethod(_mpl, "close", "i", _id);
+            return result != nullptr;
+        });
+    }
+
  private:
+    std::size_t _id;
     PyObjectWrapper _mpl;
     PyObjectWrapper _fig;
     PyObjectWrapper _axis;
@@ -464,10 +481,10 @@ namespace detail {
         }
 
         Figure figure(std::optional<std::size_t> id = {}) {
-            if (id.has_value() && _figure_exists(*id)) {
+            if (id.has_value() && figure_exists(*id)) {
                 PyObjectWrapper fig = PyObject_CallMethod(_mpl, "figure", "i", id);
                 PyObjectWrapper axis = PyObject_CallMethod(_mpl, "gca", nullptr);
-                return Figure{_mpl, fig, axis};
+                return Figure{*id, _mpl, fig, axis};
             }
 
             const std::size_t fig_id = id.value_or(_get_unused_fig_id());
@@ -486,7 +503,31 @@ namespace detail {
                 pycall([&] () { PyErr_Print(); });
                 throw std::runtime_error("Error creating line plot.");
             }
-            return Figure{_mpl, fig, axis};
+            return Figure{fig_id, _mpl, fig, axis};
+        }
+
+        bool figure_exists(std::size_t id) const {
+            return pycall([&] () {
+                PyObjectWrapper result = PyObject_CallMethod(_mpl, "fignum_exists", "i", id);
+                return result.get() == Py_True;
+            });
+        }
+
+        std::vector<std::size_t> get_fig_ids() const {
+            return pycall([&] () {
+                PyObjectWrapper result = PyObject_CallMethod(_mpl, "get_fignums", nullptr);
+                assert(PyList_Check(result));
+
+                const std::size_t size = PyList_Size(result);
+                std::vector<std::size_t> ids; ids.reserve(size);
+                for (std::size_t i = 0; i < size; ++i) {
+                    PyObjectWrapper item = PyList_GetItem(result, i);
+                    assert(PyLong_Check(item));
+                    ids.push_back(PyLong_AsLong(item));
+                }
+
+                return ids;
+            });
         }
 
         void show_all(std::optional<bool> block) const {
@@ -511,6 +552,12 @@ namespace detail {
             });
         }
 
+        void close_all() const {
+            pycall([&] () {
+                PyObjectWrapper{PyObject_CallMethod(_mpl, "close", "s", "all")};
+            });
+        }
+
         bool use_style(const std::string& name) {
             return pycall([&] () -> bool {
                 if (!_mpl) return false;
@@ -532,18 +579,12 @@ namespace detail {
 
         std::size_t _get_unused_fig_id() {
             std::size_t id = 0;
-            while (_figure_exists(id))
+            while (figure_exists(id))
                 id++;
-            _figure_ids.insert(id);
             return id;
         }
 
-        bool _figure_exists(std::size_t id) const {
-            return _figure_ids.count(id);
-        }
-
         PyObjectWrapper _mpl{nullptr};
-        std::set<std::size_t> _figure_ids;
     };
 
 }  // namespace detail
@@ -554,9 +595,33 @@ Figure figure(std::optional<std::size_t> id = {}) {
     return detail::MPLWrapper::instance().figure(id);
 }
 
+//! Return true if a figure with the given id exists
+bool figure_exists(std::size_t id) {
+    return detail::MPLWrapper::instance().figure_exists(id);
+}
+
 //! Show all figures
-void show_all(std::optional<bool> block = {}) {
+void show_all_figures(std::optional<bool> block = {}) {
     detail::MPLWrapper::instance().show_all(block);
+}
+
+//! Close all figures
+void close_all_figures() {
+    detail::MPLWrapper::instance().close_all();
+}
+
+//! Get the ids of all registered figures
+std::vector<std::size_t> get_all_figure_ids() {
+    return detail::MPLWrapper::instance().get_fig_ids();
+}
+
+//! Get all registered figures
+std::vector<Figure> get_all_figures() {
+    const auto ids = get_all_figure_ids();
+    std::vector<Figure> figs; figs.reserve(ids.size());
+    for (auto id : ids)
+        figs.push_back(figure(id));
+    return figs;
 }
 
 //! Set a matplotlib style to be used in newly created figures
