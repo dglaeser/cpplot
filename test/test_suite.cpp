@@ -9,6 +9,7 @@ using namespace boost::ut;
 
 int main() {
     using namespace cpplot;
+    using namespace cpplot::literals;
 
     set_style("ggplot");
 
@@ -46,7 +47,7 @@ int main() {
         expect(figure().plot(
             std::vector{1.0, 2.0, 3.0},
             std::vector{3.0, 4.0, 5.0},
-            with(label = "some_label")
+            with(kw("label") = "some_label")
         ));
     };
 
@@ -54,7 +55,7 @@ int main() {
         expect(figure().plot(
             std::vector{1.0, 2.0, 3.0},
             std::vector{3.0, 4.0, 5.0},
-            with(label = std::string{"some_label"})
+            with("label"_kw = std::string{"some_label"})
         ));
     };
 
@@ -62,7 +63,7 @@ int main() {
         expect(figure().plot(
             std::vector{1.0, 2.0, 3.0},
             std::vector{3.0, 4.0, 5.0},
-            with(color = "blue")
+            with("color"_kw = "blue")
         ));
     };
 

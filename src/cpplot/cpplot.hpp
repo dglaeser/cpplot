@@ -169,97 +169,101 @@ namespace detail {
 #endif  // DOXYGEN
 
 
-//! Data structure to represent a Key-Value pair
-template<typename Key, typename Value>
-class KeyValuePair {
-    static_assert(std::is_same_v<Key, std::remove_cvref_t<Key>>);
-    static_assert(std::is_default_constructible_v<Key>);
-
+//! Data structure to represent a keyword argument
+template<typename Value>
+class Kwarg {
  public:
-    using KeyType = Key;
     using ValueType = std::remove_cvref_t<Value>;
 
-    KeyValuePair(const KeyValuePair&) = delete;
-    KeyValuePair(KeyValuePair&&) = default;
+    Kwarg(const Kwarg&) = delete;
+    Kwarg(Kwarg&&) = default;
 
     template<typename V>
-    explicit constexpr KeyValuePair(const Key&, V&& value) noexcept
-    : _value{std::forward<V>(value)} {
+    explicit constexpr Kwarg(std::string name, V&& value) noexcept
+    : _name{std::move(name)}
+    , _value{std::forward<V>(value)} {
         static_assert(std::is_same_v<std::remove_cvref_t<Value>, std::remove_cvref_t<V>>);
     }
 
-    //! Return the value associated with this key
-    const auto& access_with(const Key&) const {
-        return _value;
-    }
+    const std::string& key() const { return _name; }
+    const ValueType& value() const { return _value; }
 
  private:
+    std::string _name;
     Value _value;
 };
 
-template<typename K, typename V>
-KeyValuePair(const K&, V&&) -> KeyValuePair<K, std::conditional_t<
-    std::is_lvalue_reference_v<V>, V, std::remove_cvref_t<V>
->>;
+template<typename V>
+Kwarg(std::string, V&&) -> Kwarg<std::conditional_t<std::is_lvalue_reference_v<V>, V, std::remove_cvref_t<V>>>;
 
-//! Data structure to represent a keyword argument (without a value)
-template<typename Impl>
-struct Key {
-    //! bind a value to this keyword argument
-    template<typename Value>
-    constexpr auto operator=(Value&& v) const noexcept {
-        static_assert(std::is_default_constructible_v<Impl>);
-        return KeyValuePair{Impl{}, std::forward<Value>(v)};
+//! Helper class to create keyword arguments
+class KwargFactory {
+ public:
+    explicit KwargFactory(std::string name)
+    : _name{std::move(name)}
+    {}
+
+    template<typename T>
+    auto operator=(T&& value) && {
+        return Kwarg<T>{std::move(_name), std::forward<T>(value)};
     }
+
+ private:
+    std::string _name;
 };
 
-//! Data structure to represent the label keyword for plots
-struct Label : Key<Label> {
-    using Key<Label>::operator=;
-    static std::string name() { return "label"; }
-};
-//! Data structure to represent the color keyword for plots
-struct Color : Key<Color> {
-    using Key<Color>::operator=;
-    static std::string name() { return "color"; }
-};
+//! Helper function to create keyword arguments
+inline KwargFactory kw(std::string name) noexcept {
+    return KwargFactory{std::move(name)};
+}
 
-inline constexpr Label label;
-inline constexpr Color color;
+namespace literals {
+
+//! Create a keyword argument from a string literal
+KwargFactory operator ""_kw(const char* chars, size_t size) {
+    std::string n;
+    n.resize(size);
+    std::copy_n(chars, size, n.begin());
+    return KwargFactory{n};
+}
+
+}  // namespace literals
 
 
 #ifndef DOXYGEN
 namespace detail {
 
     template<typename T>
-    struct IsKeyValuePair : std::false_type {};
-    template<typename K, typename V>
-    struct IsKeyValuePair<KeyValuePair<K, V>> : std::true_type {};
+    struct IsKwarg : std::false_type {};
+    template<typename V>
+    struct IsKwarg<Kwarg<V>> : std::true_type {};
 
 }  // namespace detail
 #endif  // DOXYGEN
 
-//! Data structure to represent a set of key-value pairs
+//! Data structure to represent a set of keyword arguments
 template<typename... T>
-class Kwargs : private T... {
-    static_assert(std::conjunction_v<detail::IsKeyValuePair<T>...>);
-    static_assert(detail::are_unique_v<T...>);
-
-    using T::access_with...;
+class Kwargs {
+    static_assert(std::conjunction_v<detail::IsKwarg<T>...>);
 
  public:
-    template<typename K>
-    static constexpr bool has_key = std::disjunction_v<std::is_same<typename T::KeyType, K>...>;
-
     Kwargs(T&&... kwargs)
-    : T{std::move(kwargs)}...
+    : _kwargs{std::move(kwargs)...}
     {}
 
-    //! Return the value associated with the given key
-    template<typename Key>
-    const auto& get(const Key& key) const {
-        return access_with(key);
+    bool has_key(const std::string& key) const {
+        return std::apply([&] <typename... _T> (_T&&... kwarg) {
+            return (... || (kwarg.key() == key));
+        }, _kwargs);
     }
+
+    template<typename Action>
+    void apply(Action&& a) const {
+        std::apply(a, _kwargs);
+    }
+
+ private:
+    std::tuple<T...> _kwargs;
 };
 
 template<typename... T>
@@ -312,13 +316,20 @@ namespace detail {
             [] (const auto& arg) { return arg; }
         };
 
-        std::string format;
-        (..., (format += ",s:" + kwargs_format_for(kwargs.get(typename T::KeyType{}))));
-        format = "{" + format.substr(1) + "}";
-        PyObject* result = std::apply(
-            [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
-            std::tuple_cat(std::tuple{T::KeyType::name().c_str(), kwargs.get(typename T::KeyType{})}...)
-        );
+        PyObject* result = nullptr;
+        kwargs.apply([&] <typename... _T> (_T&&... kwarg) {
+            std::string format;
+            (..., (format += ",s:" + kwargs_format_for(kwarg.value())));
+            format = "{" + format.substr(1) + "}";
+            result = std::apply(
+                [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
+                std::tuple_cat(
+                    std::tuple{kwarg.key().c_str()...},
+                    std::tuple{kwarg.value()...}
+                )
+            );
+        });
+
         if (!result)
             throw std::runtime_error("Conversion to PyObject failed.");
         return result;
@@ -347,7 +358,7 @@ namespace detail {
                 PyObjectWrapper args = Py_BuildValue("OO", as_pylist(x).release(), as_pylist(y).release());
                 if (function && args) {
                     PyObjectWrapper lines = PyObject_Call(function, args, as_pyobject(kwargs));
-                    if constexpr (Kwargs<T...>::template has_key<Label>)
+                    if (kwargs.has_key("label"))
                         PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
                     if (lines)
                         return true;
@@ -361,18 +372,20 @@ namespace detail {
         bool set_image(const Image& image) {
             return pycall([&] () {
                 const auto size = Traits::ImageSize<Image>::get(image);
-                PyObject* pydata = PyList_New(size[0]);
+                PyObjectWrapper pydata = PyList_New(size[0]);
                 if (!pydata)
                     return false;
+
+                // PyList_Set_Item "steals" a reference, so we don't have to decrement
                 for (std::size_t y = 0; y < size[0]; ++y) {
                     PyObject* row = PyList_New(size[1]);
                     for (std::size_t x = 0; x < size[1]; ++x)
                         PyList_SET_ITEM(row, x, value_to_pyobject(
                             Traits::ImageAccess<Image>::at({y, x}, image)
                         ).release());
-                    PyList_SET_ITEM(pydata, y, row);
+                    PyList_SET_ITEM(static_cast<PyObject*>(pydata), y, row);
                 }
-                PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", pydata);
+                PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", static_cast<PyObject*>(pydata));
                 return static_cast<bool>(result);
             });
         }
