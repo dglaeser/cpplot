@@ -213,10 +213,6 @@ struct Key {
     }
 };
 
-//! Data structure to represent the x-values keyword for creating a line plot
-struct X : Key<X> { using Key<X>::operator=; };
-//! Data structure to represent the y-values keyword for creating a line plot
-struct Y : Key<Y> { using Key<Y>::operator=; };
 //! Data structure to represent the label keyword for plots
 struct Label : Key<Label> {
     using Key<Label>::operator=;
@@ -228,8 +224,6 @@ struct Color : Key<Color> {
     static std::string name() { return "color"; }
 };
 
-inline constexpr X x;
-inline constexpr Y y;
 inline constexpr Label label;
 inline constexpr Color color;
 
