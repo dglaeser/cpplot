@@ -330,66 +330,67 @@ namespace detail {
         return result;
     }
 
+    class Axis {
+    public:
+        explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
+        : _mpl{std::move(mpl)}
+        , _axis{std::move(axis)} {
+            assert(_mpl);
+            assert(_axis);
+        }
+
+        //! Add a line plot to this axis
+        template<std::ranges::range X, std::ranges::range Y>
+        bool plot(X&& x, Y&& y) {
+            return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
+        }
+
+        //! Add a line plot to this axis with additional kwargs to be forwarded
+        template<std::ranges::range X, std::ranges::range Y, typename... T>
+        bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
+            return pycall([&] () {
+                PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
+                PyObjectWrapper args = Py_BuildValue("OO", as_pylist(x).release(), as_pylist(y).release());
+                if (function && args) {
+                    PyObjectWrapper lines = PyObject_Call(function, args, as_pyobject(kwargs));
+                    if constexpr (Kwargs<T...>::template has_key<Label>)
+                        PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
+                    if (lines)
+                        return true;
+                }
+                PyErr_Print();
+                return false;
+            });
+        }
+
+        template<typename Image>
+        bool set_image(const Image& image) {
+            return pycall([&] () {
+                const auto size = Traits::ImageSize<Image>::get(image);
+                PyObject* pydata = PyList_New(size[0]);
+                if (!pydata)
+                    return false;
+                for (std::size_t y = 0; y < size[0]; ++y) {
+                    PyObject* row = PyList_New(size[1]);
+                    for (std::size_t x = 0; x < size[1]; ++x)
+                        PyList_SET_ITEM(row, x, value_to_pyobject(
+                            Traits::ImageAccess<Image>::at({y, x}, image)
+                        ).release());
+                    PyList_SET_ITEM(pydata, y, row);
+                }
+                PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", pydata);
+                return static_cast<bool>(result);
+            });
+        }
+
+    private:
+        PyObjectWrapper _mpl;
+        PyObjectWrapper _axis;
+    };
+
 }  // namespace detail
 #endif  // DOXYGEN
 
-
-//! Class to represent an axis to which plots can be added
-class Axis {
- public:
-    explicit Axis(detail::PyObjectWrapper mpl, detail::PyObjectWrapper axis)
-    : _mpl{std::move(mpl)}
-    , _axis{std::move(axis)} {
-        assert(_mpl);
-        assert(_axis);
-    }
-
-    //! Add a line plot to this axis
-    template<std::ranges::range X, std::ranges::range Y>
-    bool plot(X&& x, Y&& y) {
-        return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
-    }
-
-    //! Add a line plot to this axis with additional kwargs to be forwarded
-    template<std::ranges::range X, std::ranges::range Y, typename... T>
-    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
-        return detail::pycall([&] () {
-            detail::PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
-            detail::PyObjectWrapper args = Py_BuildValue("OO", detail::as_pylist(x).release(), detail::as_pylist(y).release());
-            if (function && args) {
-                detail::PyObjectWrapper lines = PyObject_Call(function, args, detail::as_pyobject(kwargs));
-                if constexpr (Kwargs<T...>::template has_key<Label>)
-                    detail::PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
-                if (lines)
-                    return true;
-            }
-            PyErr_Print();
-            return false;
-        });
-    }
-
-    template<typename Image>
-    bool set_image(const Image& image) {
-        return detail::pycall([&] () {
-            const auto size = Traits::ImageSize<Image>::get(image);
-            PyObject* pydata = PyList_New(size[0]);
-            for (std::size_t y = 0; y < size[0]; ++y) {
-                PyObject* row = PyList_New(size[1]);
-                for (std::size_t x = 0; x < size[1]; ++x)
-                    PyList_SET_ITEM(row, x, detail::value_to_pyobject(
-                        Traits::ImageAccess<Image>::at({y, x}, image)
-                    ).release());
-                PyList_SET_ITEM(pydata, y, row);
-            }
-            detail::PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", pydata);
-            return static_cast<bool>(result);
-        });
-    }
-
- private:
-    detail::PyObjectWrapper _mpl;
-    detail::PyObjectWrapper _axis;
-};
 
 //! Class to represent a figure
 class Figure {
@@ -410,12 +411,12 @@ class Figure {
 
     template<typename... Args>
     bool plot(Args&&... args) {
-        return Axis{_mpl, _axis}.plot(std::forward<Args>(args)...);
+        return detail::Axis{_mpl, _axis}.plot(std::forward<Args>(args)...);
     }
 
     template<typename Image>
     bool set_image(const Image& image) {
-        return Axis{_mpl, _axis}.set_image(image);
+        return detail::Axis{_mpl, _axis}.set_image(image);
     }
 
     bool close() {
