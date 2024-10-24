@@ -294,6 +294,7 @@ constexpr auto with(T&&... args) {
 
 namespace Traits {
 
+//! Customization point to get the size of an image type
 template<typename T>
 struct ImageSize;
 template<typename T>
@@ -308,6 +309,7 @@ struct ImageSize<std::vector<std::vector<T>>> {
     }
 };
 
+//! Customization point to get a value in an image
 template<typename T>
 struct ImageAccess;
 template<typename T>
