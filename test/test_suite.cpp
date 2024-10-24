@@ -30,48 +30,38 @@ int main() {
 
     "plot_values"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            )
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0}
         ));
     };
 
     "plot_values_from_list"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::list{1.0, 2.0, 3.0},
-                y = std::list{3.0, 4.0, 5.0}
-            )
+            std::list{1.0, 2.0, 3.0},
+            std::list{3.0, 4.0, 5.0}
         ));
     };
 
     "plot_values_with_label"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            ),
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0},
             with(label = "some_label")
         ));
     };
 
     "plot_values_with_label_from_string"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            ),
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0},
             with(label = std::string{"some_label"})
         ));
     };
 
     "plot_values_with_color"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            ),
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0},
             with(color = "blue")
         ));
     };

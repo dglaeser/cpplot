@@ -277,36 +277,6 @@ constexpr auto with(T&&... args) {
     return Kwargs{std::forward<T>(args)...};
 }
 
-//! Class that contains the data for a line plot
-class LinePlot {
- public:
-    template<typename A, typename VA, typename B, typename VB>
-    static LinePlot from(KeyValuePair<A, VA>&& a, KeyValuePair<B, VB>&& b) {
-        return _from(Kwargs{std::move(a), std::move(b)});
-    }
-
-    detail::PyObjectWrapper x() const { return _x; }
-    detail::PyObjectWrapper y() const { return _y; }
-
- private:
-    template<typename... T>
-    static LinePlot _from(Kwargs<T...>&& kwargs) {
-        static_assert(Kwargs<T...>::template has_key<X>);
-        static_assert(Kwargs<T...>::template has_key<Y>);
-        return LinePlot{kwargs.get(X{}), kwargs.get(Y{})};
-    }
-
-    template<typename X, typename Y>
-    explicit LinePlot(const X& x, const Y& y)
-    : _x{detail::as_pylist(x)}
-    , _y{detail::as_pylist(y)}
-    {}
-
-    detail::PyObjectWrapper _x;
-    detail::PyObjectWrapper _y;
-};
-
-
 namespace Traits {
 
 template<typename T>
@@ -374,17 +344,18 @@ class Axis {
         assert(_axis);
     }
 
-    //! Add the given line plot to this axis
-    bool add(const LinePlot& p) {
-        return add(p, Kwargs<>{});
+    //! Add a line plot to this axis
+    template<std::ranges::range X, std::ranges::range Y>
+    bool plot(X&& x, Y&& y) {
+        return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
     }
 
-    //! Add the given line plot to this axis with additional kwargs to be forwarded
-    template<typename... T>
-    bool add(const LinePlot& p, const Kwargs<T...>& kwargs) {
+    //! Add a line plot to this axis with additional kwargs to be forwarded
+    template<std::ranges::range X, std::ranges::range Y, typename... T>
+    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
         return detail::pycall([&] () {
             detail::PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
-            detail::PyObjectWrapper args = Py_BuildValue("OO", p.x().release(), p.y().release());
+            detail::PyObjectWrapper args = Py_BuildValue("OO", detail::as_pylist(x).release(), detail::as_pylist(y).release());
             if (function && args) {
                 detail::PyObjectWrapper lines = PyObject_Call(function, args, detail::as_pyobject(kwargs));
                 if constexpr (Kwargs<T...>::template has_key<Label>)
@@ -439,7 +410,7 @@ class Figure {
 
     template<typename... Args>
     bool plot(Args&&... args) {
-        return Axis{_mpl, _axis}.add(std::forward<Args>(args)...);
+        return Axis{_mpl, _axis}.plot(std::forward<Args>(args)...);
     }
 
     template<typename Image>
