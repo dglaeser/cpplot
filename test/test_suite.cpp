@@ -74,6 +74,8 @@ int main() {
         ));
     };
 
+    show_all_figures(false);
+
     "get_all"_test = [&] () {
         const auto ids = get_all_figure_ids();
         auto figs = get_all_figures();
@@ -94,8 +96,6 @@ int main() {
         close_all_figures();
         expect(eq(get_all_figure_ids().size(), std::size_t{0}));
     };
-
-    show_all_figures(false);
 
     return 0;
 }
