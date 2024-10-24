@@ -4,6 +4,8 @@
 #include <utility>
 #include <optional>
 #include <vector>
+#include <concepts>
+
 
 #ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
     #ifdef _DEBUG
@@ -49,9 +51,24 @@ namespace detail {
         }
     };
 
-    template<typename F>
-    static decltype(auto) pycall(const F& f) {
+    template<std::invocable F>
+    inline decltype(auto) pycall(const F& f) {
         return PythonWrapper::instance()(f);
+    }
+
+    template<std::invocable F> requires(std::is_same_v<std::invoke_result_t<F>, PyObject*>)
+    inline PyObject* check(const F& f) {
+        PyObject* result = f();
+        if (!result)
+            PyErr_Print();
+        return result;
+    }
+
+    template<std::invocable F> requires(std::is_same_v<std::invoke_result_t<F>, int>)
+    inline void check(const F& f) {
+        int err_code = f();
+        if (!err_code)
+            PyErr_Print();
     }
 
     void swap_pyobjects(PyObject*& a, PyObject*& b) {
@@ -64,7 +81,7 @@ namespace detail {
 
     class PyObjectWrapper {
     public:
-        ~PyObjectWrapper() { detail::pycall([&] () { if (_p) Py_DECREF(_p); }); }
+        ~PyObjectWrapper() { pycall([&] () { if (_p) Py_DECREF(_p); }); }
 
         PyObjectWrapper() = default;
         PyObjectWrapper(PyObject* p) : _p{p} {}
@@ -322,7 +339,11 @@ namespace detail {
             (..., (format += ",s:" + kwargs_format_for(kwarg.value())));
             format = "{" + format.substr(1) + "}";
             result = std::apply(
-                [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
+                [&] (const auto&... args) {
+                    return check([&] () {
+                        return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...);
+                    });
+                },
                 std::tuple_cat(
                     std::tuple{kwarg.key().c_str()...},
                     std::tuple{kwarg.value()...}
@@ -354,12 +375,12 @@ namespace detail {
         template<std::ranges::range X, std::ranges::range Y, typename... T>
         bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
             return pycall([&] () {
-                PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
-                PyObjectWrapper args = Py_BuildValue("OO", as_pylist(x).release(), as_pylist(y).release());
+                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_axis, "plot"); });
+                PyObjectWrapper args = check([&] () { return Py_BuildValue("OO", as_pylist(x).release(), as_pylist(y).release()); });
                 if (function && args) {
-                    PyObjectWrapper lines = PyObject_Call(function, args, as_pyobject(kwargs));
+                    PyObjectWrapper lines = check([&] () { return PyObject_Call(function, args, as_pyobject(kwargs)); });
                     if (kwargs.has_key("label"))
-                        PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
+                        PyObjectWrapper{check([&] () { return PyObject_CallMethod(_axis, "legend", nullptr); })};
                     if (lines)
                         return true;
                 }
@@ -372,13 +393,13 @@ namespace detail {
         bool set_image(const Image& image) {
             return pycall([&] () {
                 const auto size = Traits::ImageSize<Image>::get(image);
-                PyObjectWrapper pydata = PyList_New(size[0]);
+                PyObjectWrapper pydata = check([&] () { return PyList_New(size[0]); });
                 if (!pydata)
                     return false;
 
                 // PyList_Set_Item "steals" a reference, so we don't have to decrement
                 for (std::size_t y = 0; y < size[0]; ++y) {
-                    PyObject* row = PyList_New(size[1]);
+                    PyObject* row = check([&] () { return PyList_New(size[1]); });
                     for (std::size_t x = 0; x < size[1]; ++x)
                         PyList_SET_ITEM(row, x, value_to_pyobject(
                             Traits::ImageAccess<Image>::at({y, x}, image)
@@ -421,7 +442,9 @@ class Figure {
 
     bool close() {
         return detail::pycall([&] () {
-            detail::PyObjectWrapper result = PyObject_CallMethod(_mpl, "close", "i", _id);
+            detail::PyObjectWrapper result = detail::check([&] () {
+                return PyObject_CallMethod(_mpl, "close", "i", _id);
+            });
             return result != nullptr;
         });
     }
@@ -457,46 +480,48 @@ namespace detail {
 
         Figure figure(std::optional<std::size_t> id = {}) {
             if (id.has_value() && figure_exists(*id)) {
-                PyObjectWrapper fig = PyObject_CallMethod(_mpl, "figure", "i", id);
-                PyObjectWrapper axis = PyObject_CallMethod(_mpl, "gca", nullptr);
+                PyObjectWrapper fig = check([&] () { return PyObject_CallMethod(_mpl, "figure", "i", id); });
+                PyObjectWrapper axis = check([&] () { return PyObject_CallMethod(_mpl, "gca", nullptr); });
                 return Figure{*id, _mpl, fig, axis};
             }
 
             const std::size_t fig_id = id.value_or(_get_unused_fig_id());
             PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
-                PyObjectWrapper function = PyObject_GetAttrString(_mpl, "subplots");
+                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "subplots"); });
                 if (!function) return nullptr;
                 PyObjectWrapper args = PyTuple_New(0);
                 PyObjectWrapper kwargs = Py_BuildValue("{s:i}", "num", fig_id);
-                return PyObject_Call(function, args, kwargs);
+                return check([&] () { return PyObject_Call(function, args, kwargs); });
             });
 
-            assert(pycall([&] () { return PyTuple_Check(fig_axis_tuple); }));
-            PyObjectWrapper fig = pycall([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 0)); });
-            PyObjectWrapper axis = pycall([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 1)); });
-            if (!axis || !fig) {
-                pycall([&] () { PyErr_Print(); });
-                throw std::runtime_error("Error creating line plot.");
-            }
+            auto [fig, axis] = pycall([&] () {
+                assert(PyTuple_Check(fig_axis_tuple));
+                PyObjectWrapper fig = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 0)); });
+                PyObjectWrapper axis = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 1)); });
+                if (!axis || !fig) {
+                    throw std::runtime_error("Error creating figure.");
+                }
+                return std::make_pair(fig, axis);
+            });
             return Figure{fig_id, _mpl, fig, axis};
         }
 
         bool figure_exists(std::size_t id) const {
             return pycall([&] () {
-                PyObjectWrapper result = PyObject_CallMethod(_mpl, "fignum_exists", "i", id);
+                PyObjectWrapper result = check([&] () { return PyObject_CallMethod(_mpl, "fignum_exists", "i", id); });
                 return result.get() == Py_True;
             });
         }
 
         std::vector<std::size_t> get_fig_ids() const {
             return pycall([&] () {
-                PyObjectWrapper result = PyObject_CallMethod(_mpl, "get_fignums", nullptr);
+                PyObjectWrapper result = check([&] () { return PyObject_CallMethod(_mpl, "get_fignums", nullptr); });
                 assert(PyList_Check(result));
 
                 const std::size_t size = PyList_Size(result);
                 std::vector<std::size_t> ids; ids.reserve(size);
                 for (std::size_t i = 0; i < size; ++i) {
-                    PyObjectWrapper item = PyList_GetItem(result, i);
+                    PyObjectWrapper item = check([&] () { return PyList_GetItem(result, i); });
                     assert(PyLong_Check(item));
                     ids.push_back(PyLong_AsLong(item));
                 }
@@ -507,38 +532,31 @@ namespace detail {
 
         void show_all(std::optional<bool> block) const {
             pycall([&] () {
-                PyObjectWrapper function = PyObject_GetAttrString(_mpl, "show");
-                if (!function) {
-                    PyErr_Print();
+                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "show"); });
+                if (!function)
                     return;
-                }
 
                 PyObject* pyblock = block.has_value() ? (*block ? Py_True : Py_False) : Py_None;
                 PyObjectWrapper args = PyTuple_New(0);
                 PyObjectWrapper kwargs = Py_BuildValue("{s:O}", "block", pyblock);
-                if (!kwargs) {
-                    PyErr_Print();
-                    return;
-                }
-
-                PyObjectWrapper result = PyObject_Call(function, args, kwargs);
-                if (!result)
-                    PyErr_Print();
+                PyObjectWrapper result = check([&] () { return PyObject_Call(function, args, kwargs); });
             });
         }
 
         void close_all() const {
             pycall([&] () {
-                PyObjectWrapper{PyObject_CallMethod(_mpl, "close", "s", "all")};
+                PyObjectWrapper{check([&] () {
+                    return PyObject_CallMethod(_mpl, "close", "s", "all"); }
+                )};
             });
         }
 
         bool use_style(const std::string& name) {
             return pycall([&] () -> bool {
                 if (!_mpl) return false;
-                PyObjectWrapper style = PyObject_GetAttrString(_mpl, "style");
+                PyObjectWrapper style = check([&] () { return PyObject_GetAttrString(_mpl, "style"); });
                 if (!style) return false;
-                PyObjectWrapper result = PyObject_CallMethod(style, "use", "s", name.c_str());
+                PyObjectWrapper result = check([&] () { return PyObject_CallMethod(style, "use", "s", name.c_str()); });
                 return static_cast<bool>(result);
             });
         }
