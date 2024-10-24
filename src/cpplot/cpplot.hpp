@@ -395,6 +395,9 @@ namespace detail {
         PyObjectWrapper _axis;
     };
 
+    // forward declaration
+    class MPLWrapper;
+
 }  // namespace detail
 #endif  // DOXYGEN
 
@@ -402,16 +405,6 @@ namespace detail {
 //! Class to represent a figure
 class Figure {
  public:
-    explicit Figure(std::size_t id,
-                    detail::PyObjectWrapper mpl,
-                    detail::PyObjectWrapper fig,
-                    detail::PyObjectWrapper axis)
-    : _id{id}
-    , _mpl{mpl}
-    , _fig{fig}
-    , _axis{axis}
-    {}
-
     std::size_t id() const {
         return _id;
     }
@@ -434,6 +427,17 @@ class Figure {
     }
 
  private:
+    friend class detail::MPLWrapper;
+    explicit Figure(std::size_t id,
+                    detail::PyObjectWrapper mpl,
+                    detail::PyObjectWrapper fig,
+                    detail::PyObjectWrapper axis)
+    : _id{id}
+    , _mpl{mpl}
+    , _fig{fig}
+    , _axis{axis}
+    {}
+
     std::size_t _id;
     detail::PyObjectWrapper _mpl;
     detail::PyObjectWrapper _fig;
