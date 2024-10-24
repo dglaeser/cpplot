@@ -9,6 +9,7 @@ using namespace boost::ut;
 
 int main() {
     using namespace cpplot;
+    using namespace cpplot::literals;
 
     set_style("ggplot");
 
@@ -30,49 +31,39 @@ int main() {
 
     "plot_values"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            )
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0}
         ));
     };
 
     "plot_values_from_list"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::list{1.0, 2.0, 3.0},
-                y = std::list{3.0, 4.0, 5.0}
-            )
+            std::list{1.0, 2.0, 3.0},
+            std::list{3.0, 4.0, 5.0}
         ));
     };
 
     "plot_values_with_label"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            ),
-            with(label = "some_label")
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0},
+            with(kw("label") = "some_label")
         ));
     };
 
     "plot_values_with_label_from_string"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            ),
-            with(label = std::string{"some_label"})
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0},
+            with("label"_kw = std::string{"some_label"})
         ));
     };
 
     "plot_values_with_color"_test = [&] () {
         expect(figure().plot(
-            LinePlot::from(
-                x = std::vector{1.0, 2.0, 3.0},
-                y = std::vector{3.0, 4.0, 5.0}
-            ),
-            with(color = "blue")
+            std::vector{1.0, 2.0, 3.0},
+            std::vector{3.0, 4.0, 5.0},
+            with("color"_kw = "blue")
         ));
     };
 
@@ -82,6 +73,8 @@ int main() {
             std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
         ));
     };
+
+    show_all_figures(false);
 
     "get_all"_test = [&] () {
         const auto ids = get_all_figure_ids();
@@ -103,8 +96,6 @@ int main() {
         close_all_figures();
         expect(eq(get_all_figure_ids().size(), std::size_t{0}));
     };
-
-    show_all_figures(false);
 
     return 0;
 }

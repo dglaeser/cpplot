@@ -60,65 +60,50 @@ namespace detail {
         b = c;
     }
 
-}  // namespace detail
-#endif  // DOXYGEN
+    struct WeakReference {};
 
+    class PyObjectWrapper {
+    public:
+        ~PyObjectWrapper() { detail::pycall([&] () { if (_p) Py_DECREF(_p); }); }
 
-namespace ReferenceType {
+        PyObjectWrapper() = default;
+        PyObjectWrapper(PyObject* p) : _p{p} {}
+        PyObjectWrapper(PyObject* p, WeakReference) : _p{p} { pycall([&] () { if (_p) Py_INCREF(_p); }); }
 
-//! Indicate that a PyObject pointer passed as argument does not "own" a reference
-struct Weak {};
+        PyObjectWrapper(const PyObjectWrapper& other) : PyObjectWrapper{other._p, WeakReference{}} {}
+        PyObjectWrapper(PyObjectWrapper&& other) : PyObjectWrapper{nullptr} { swap_pyobjects(_p, other._p); }
 
-}  // namespace ReferenceType
+        PyObjectWrapper& operator=(const PyObjectWrapper& other) {
+            *this = PyObjectWrapper{other};
+            return *this;
+        }
 
+        PyObjectWrapper& operator=(PyObjectWrapper&& other) {
+            swap_pyobjects(_p, other._p);
+            return *this;
+        }
 
-//! RAII wrapper around a PyObject pointer
-class PyObjectWrapper {
- public:
-    ~PyObjectWrapper() { detail::pycall([&] () { if (_p) Py_DECREF(_p); }); }
+        PyObject* release() {
+            PyObject* tmp = _p;
+            _p = nullptr;
+            return tmp;
+        }
 
-    PyObjectWrapper() = default;
-    PyObjectWrapper(PyObject* p) : _p{p} {}
-    PyObjectWrapper(PyObject* p, ReferenceType::Weak) : _p{p} { detail::pycall([&] () { if (_p) Py_INCREF(_p); }); }
+        PyObject* get() {
+            return _p;
+        }
 
-    PyObjectWrapper(const PyObjectWrapper& other) : PyObjectWrapper{other._p, ReferenceType::Weak{}} {}
-    PyObjectWrapper(PyObjectWrapper&& other) : PyObjectWrapper{nullptr} { detail::swap_pyobjects(_p, other._p); }
+        operator PyObject*() const {
+            return _p;
+        }
 
-    PyObjectWrapper& operator=(const PyObjectWrapper& other) {
-        *this = PyObjectWrapper{other};
-        return *this;
-    }
+        operator bool() const {
+            return static_cast<bool>(_p);
+        }
 
-    PyObjectWrapper& operator=(PyObjectWrapper&& other) {
-        detail::swap_pyobjects(_p, other._p);
-        return *this;
-    }
-
-    PyObject* release() {
-        PyObject* tmp = _p;
-        _p = nullptr;
-        return tmp;
-    }
-
-    PyObject* get() {
-        return _p;
-    }
-
-    operator PyObject*() const {
-        return _p;
-    }
-
-    operator bool() const {
-        return static_cast<bool>(_p);
-    }
-
- private:
-    PyObject* _p{nullptr};
-};
-
-
-#ifndef DOXYGEN
-namespace detail {
+    private:
+        PyObject* _p{nullptr};
+    };
 
     template<typename... T>
     struct are_unique;
@@ -184,125 +169,101 @@ namespace detail {
 #endif  // DOXYGEN
 
 
-//! Data structure to represent a Key-Value pair
-template<typename Key, typename Value>
-class KeyValuePair {
-    static_assert(std::is_same_v<Key, std::remove_cvref_t<Key>>);
-    static_assert(std::is_default_constructible_v<Key>);
-
+//! Data structure to represent a keyword argument
+template<typename Value>
+class Kwarg {
  public:
-    using KeyType = Key;
     using ValueType = std::remove_cvref_t<Value>;
 
-    KeyValuePair(const KeyValuePair&) = delete;
-    KeyValuePair(KeyValuePair&&) = default;
+    Kwarg(const Kwarg&) = delete;
+    Kwarg(Kwarg&&) = default;
 
     template<typename V>
-    explicit constexpr KeyValuePair(const Key&, V&& value) noexcept
-    : _value{std::forward<V>(value)} {
+    explicit constexpr Kwarg(std::string name, V&& value) noexcept
+    : _name{std::move(name)}
+    , _value{std::forward<V>(value)} {
         static_assert(std::is_same_v<std::remove_cvref_t<Value>, std::remove_cvref_t<V>>);
     }
 
-    //! Return the value associated with this key
-    const auto& access_with(const Key&) const {
-        return _value;
-    }
+    const std::string& key() const { return _name; }
+    const ValueType& value() const { return _value; }
 
  private:
+    std::string _name;
     Value _value;
 };
 
-template<typename K, typename V>
-KeyValuePair(const K&, V&&) -> KeyValuePair<K, std::conditional_t<
-    std::is_lvalue_reference_v<V>, V, std::remove_cvref_t<V>
->>;
+template<typename V>
+Kwarg(std::string, V&&) -> Kwarg<std::conditional_t<std::is_lvalue_reference_v<V>, V, std::remove_cvref_t<V>>>;
 
-//! Data structure to represent a keyword argument (without a value)
-template<typename Impl>
-struct Key {
-    //! bind a value to this keyword argument
-    template<typename Value>
-    constexpr auto operator=(Value&& v) const noexcept {
-        static_assert(std::is_default_constructible_v<Impl>);
-        return KeyValuePair{Impl{}, std::forward<Value>(v)};
+//! Helper class to create keyword arguments
+class KwargFactory {
+ public:
+    explicit KwargFactory(std::string name)
+    : _name{std::move(name)}
+    {}
+
+    template<typename T>
+    auto operator=(T&& value) && {
+        return Kwarg<T>{std::move(_name), std::forward<T>(value)};
     }
+
+ private:
+    std::string _name;
 };
 
-//! Data structure to represent the x-values keyword for creating a line plot
-struct X : Key<X> { using Key<X>::operator=; };
-//! Data structure to represent the y-values keyword for creating a line plot
-struct Y : Key<Y> { using Key<Y>::operator=; };
-//! Data structure to represent the label keyword for plots
-struct Label : Key<Label> {
-    using Key<Label>::operator=;
-    static std::string name() { return "label"; }
-};
-//! Data structure to represent the color keyword for plots
-struct Color : Key<Color> {
-    using Key<Color>::operator=;
-    static std::string name() { return "color"; }
-};
+//! Helper function to create keyword arguments
+inline KwargFactory kw(std::string name) noexcept {
+    return KwargFactory{std::move(name)};
+}
 
-inline constexpr X x;
-inline constexpr Y y;
-inline constexpr Label label;
-inline constexpr Color color;
+namespace literals {
+
+//! Create a keyword argument from a string literal
+KwargFactory operator ""_kw(const char* chars, size_t size) {
+    std::string n;
+    n.resize(size);
+    std::copy_n(chars, size, n.begin());
+    return KwargFactory{n};
+}
+
+}  // namespace literals
 
 
 #ifndef DOXYGEN
 namespace detail {
 
     template<typename T>
-    struct IsKeyValuePair : std::false_type {};
-    template<typename K, typename V>
-    struct IsKeyValuePair<KeyValuePair<K, V>> : std::true_type {};
+    struct IsKwarg : std::false_type {};
+    template<typename V>
+    struct IsKwarg<Kwarg<V>> : std::true_type {};
 
 }  // namespace detail
 #endif  // DOXYGEN
 
-//! Data structure to represent a set of key-value pairs
+//! Data structure to represent a set of keyword arguments
 template<typename... T>
-class Kwargs : private T... {
-    static_assert(std::conjunction_v<detail::IsKeyValuePair<T>...>);
-    static_assert(detail::are_unique_v<T...>);
-
-    using T::access_with...;
+class Kwargs {
+    static_assert(std::conjunction_v<detail::IsKwarg<T>...>);
 
  public:
-    template<typename K>
-    static constexpr bool has_key = std::disjunction_v<std::is_same<typename T::KeyType, K>...>;
-
     Kwargs(T&&... kwargs)
-    : T{std::move(kwargs)}...
+    : _kwargs{std::move(kwargs)...}
     {}
 
-    //! Return the value associated with the given key
-    template<typename Key>
-    const auto& get(const Key& key) const {
-        return access_with(key);
+    bool has_key(const std::string& key) const {
+        return std::apply([&] <typename... _T> (_T&&... kwarg) {
+            return (... || (kwarg.key() == key));
+        }, _kwargs);
     }
 
-    //! Return a representation as PyObject
-    PyObjectWrapper as_pyobject() const {
-        if constexpr (sizeof...(T) == 0)
-            return nullptr;
-
-        const auto as_buildvalue_arg = detail::OverloadSet{
-            [] (const std::string& s) { return s.c_str(); },
-            [] (const auto& arg) { return arg; }
-        };
-
-        std::string format;
-        (..., (format += ",s:" + detail::kwargs_format_for(get(typename T::KeyType{}))));
-        format = "{" + format.substr(1) + "}";
-        PyObject* result = std::apply(
-            [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
-            std::tuple_cat(std::tuple{T::KeyType::name().c_str(), get(typename T::KeyType{})}...)
-        );
-        if (!result)
-            throw std::runtime_error("Conversion to PyObject failed.");
-        return result;
+    template<typename Action>
+    void apply(Action&& a) const {
+        std::apply(a, _kwargs);
     }
+
+ private:
+    std::tuple<T...> _kwargs;
 };
 
 template<typename... T>
@@ -313,36 +274,6 @@ template<typename... T>
 constexpr auto with(T&&... args) {
     return Kwargs{std::forward<T>(args)...};
 }
-
-//! Class that contains the data for a line plot
-class LinePlot {
- public:
-    template<typename A, typename VA, typename B, typename VB>
-    static LinePlot from(KeyValuePair<A, VA>&& a, KeyValuePair<B, VB>&& b) {
-        return _from(Kwargs{std::move(a), std::move(b)});
-    }
-
-    PyObjectWrapper x() const { return _x; }
-    PyObjectWrapper y() const { return _y; }
-
- private:
-    template<typename... T>
-    static LinePlot _from(Kwargs<T...>&& kwargs) {
-        static_assert(Kwargs<T...>::template has_key<X>);
-        static_assert(Kwargs<T...>::template has_key<Y>);
-        return LinePlot{kwargs.get(X{}), kwargs.get(Y{})};
-    }
-
-    template<typename X, typename Y>
-    explicit LinePlot(const X& x, const Y& y)
-    : _x{detail::as_pylist(x)}
-    , _y{detail::as_pylist(y)}
-    {}
-
-    PyObjectWrapper _x;
-    PyObjectWrapper _y;
-};
-
 
 namespace Traits {
 
@@ -372,101 +303,145 @@ struct ImageAccess<std::vector<std::vector<T>>> {
 }  // namespace Traits
 
 
-//! Class to represent an axis to which plots can be added
-class Axis {
- public:
-    explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
-    : _mpl{std::move(mpl)}
-    , _axis{std::move(axis)} {
-        assert(_mpl);
-        assert(_axis);
-    }
+#ifndef DOXYGEN
+namespace detail {
 
-    //! Add the given line plot to this axis
-    bool add(const LinePlot& p) {
-        return add(p, Kwargs<>{});
-    }
-
-    //! Add the given line plot to this axis with additional kwargs to be forwarded
     template<typename... T>
-    bool add(const LinePlot& p, const Kwargs<T...>& kwargs) {
-        return detail::pycall([&] () {
-            PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
-            PyObjectWrapper args = Py_BuildValue("OO", p.x().release(), p.y().release());
-            if (function && args) {
-                PyObjectWrapper lines = PyObject_Call(function, args, kwargs.as_pyobject());
-                if constexpr (Kwargs<T...>::template has_key<Label>)
-                    PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
-                if (lines)
-                    return true;
-            }
-            PyErr_Print();
-            return false;
+    PyObjectWrapper as_pyobject(const Kwargs<T...>& kwargs) {
+        if constexpr (sizeof...(T) == 0)
+            return nullptr;
+
+        const auto as_buildvalue_arg = OverloadSet{
+            [] (const std::string& s) { return s.c_str(); },
+            [] (const auto& arg) { return arg; }
+        };
+
+        PyObject* result = nullptr;
+        kwargs.apply([&] <typename... _T> (_T&&... kwarg) {
+            std::string format;
+            (..., (format += ",s:" + kwargs_format_for(kwarg.value())));
+            format = "{" + format.substr(1) + "}";
+            result = std::apply(
+                [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
+                std::tuple_cat(
+                    std::tuple{kwarg.key().c_str()...},
+                    std::tuple{kwarg.value()...}
+                )
+            );
         });
+
+        if (!result)
+            throw std::runtime_error("Conversion to PyObject failed.");
+        return result;
     }
 
-    template<typename Image>
-    bool set_image(const Image& image) {
-        return detail::pycall([&] () {
-            const auto size = Traits::ImageSize<Image>::get(image);
-            PyObject* pydata = PyList_New(size[0]);
-            for (std::size_t y = 0; y < size[0]; ++y) {
-                PyObject* row = PyList_New(size[1]);
-                for (std::size_t x = 0; x < size[1]; ++x)
-                    PyList_SET_ITEM(row, x, detail::value_to_pyobject(
-                        Traits::ImageAccess<Image>::at({y, x}, image)
-                    ).release());
-                PyList_SET_ITEM(pydata, y, row);
-            }
-            PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", pydata);
-            return static_cast<bool>(result);
-        });
-    }
+    class Axis {
+    public:
+        explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
+        : _mpl{std::move(mpl)}
+        , _axis{std::move(axis)} {
+            assert(_mpl);
+            assert(_axis);
+        }
 
- private:
-    PyObjectWrapper _mpl;
-    PyObjectWrapper _axis;
-};
+        //! Add a line plot to this axis
+        template<std::ranges::range X, std::ranges::range Y>
+        bool plot(X&& x, Y&& y) {
+            return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
+        }
+
+        //! Add a line plot to this axis with additional kwargs to be forwarded
+        template<std::ranges::range X, std::ranges::range Y, typename... T>
+        bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
+            return pycall([&] () {
+                PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
+                PyObjectWrapper args = Py_BuildValue("OO", as_pylist(x).release(), as_pylist(y).release());
+                if (function && args) {
+                    PyObjectWrapper lines = PyObject_Call(function, args, as_pyobject(kwargs));
+                    if (kwargs.has_key("label"))
+                        PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
+                    if (lines)
+                        return true;
+                }
+                PyErr_Print();
+                return false;
+            });
+        }
+
+        template<typename Image>
+        bool set_image(const Image& image) {
+            return pycall([&] () {
+                const auto size = Traits::ImageSize<Image>::get(image);
+                PyObjectWrapper pydata = PyList_New(size[0]);
+                if (!pydata)
+                    return false;
+
+                // PyList_Set_Item "steals" a reference, so we don't have to decrement
+                for (std::size_t y = 0; y < size[0]; ++y) {
+                    PyObject* row = PyList_New(size[1]);
+                    for (std::size_t x = 0; x < size[1]; ++x)
+                        PyList_SET_ITEM(row, x, value_to_pyobject(
+                            Traits::ImageAccess<Image>::at({y, x}, image)
+                        ).release());
+                    PyList_SET_ITEM(static_cast<PyObject*>(pydata), y, row);
+                }
+                PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", static_cast<PyObject*>(pydata));
+                return static_cast<bool>(result);
+            });
+        }
+
+    private:
+        PyObjectWrapper _mpl;
+        PyObjectWrapper _axis;
+    };
+
+    // forward declaration
+    class MPLWrapper;
+
+}  // namespace detail
+#endif  // DOXYGEN
+
 
 //! Class to represent a figure
 class Figure {
  public:
-    explicit Figure(std::size_t id,
-                    PyObjectWrapper mpl,
-                    PyObjectWrapper fig,
-                    PyObjectWrapper axis)
-    : _id{id}
-    , _mpl{mpl}
-    , _fig{fig}
-    , _axis{axis}
-    {}
-
     std::size_t id() const {
         return _id;
     }
 
     template<typename... Args>
     bool plot(Args&&... args) {
-        return Axis{_mpl, _axis}.add(std::forward<Args>(args)...);
+        return detail::Axis{_mpl, _axis}.plot(std::forward<Args>(args)...);
     }
 
     template<typename Image>
     bool set_image(const Image& image) {
-        return Axis{_mpl, _axis}.set_image(image);
+        return detail::Axis{_mpl, _axis}.set_image(image);
     }
 
     bool close() {
         return detail::pycall([&] () {
-            PyObjectWrapper result = PyObject_CallMethod(_mpl, "close", "i", _id);
+            detail::PyObjectWrapper result = PyObject_CallMethod(_mpl, "close", "i", _id);
             return result != nullptr;
         });
     }
 
  private:
+    friend class detail::MPLWrapper;
+    explicit Figure(std::size_t id,
+                    detail::PyObjectWrapper mpl,
+                    detail::PyObjectWrapper fig,
+                    detail::PyObjectWrapper axis)
+    : _id{id}
+    , _mpl{mpl}
+    , _fig{fig}
+    , _axis{axis}
+    {}
+
     std::size_t _id;
-    PyObjectWrapper _mpl;
-    PyObjectWrapper _fig;
-    PyObjectWrapper _axis;
+    detail::PyObjectWrapper _mpl;
+    detail::PyObjectWrapper _fig;
+    detail::PyObjectWrapper _axis;
 };
 
 
@@ -619,7 +594,7 @@ std::vector<std::size_t> get_all_figure_ids() {
 std::vector<Figure> get_all_figures() {
     const auto ids = get_all_figure_ids();
     std::vector<Figure> figs; figs.reserve(ids.size());
-    for (auto id : ids)
+    for (const auto id : ids)
         figs.push_back(figure(id));
     return figs;
 }
