@@ -392,12 +392,12 @@ namespace detail {
         }
 
         template<typename Image>
-        bool set_image(const Image& image) {
-            return pycall([&] () {
+        PyObjectWrapper set_image(const Image& image) {
+            return pycall([&] () -> PyObject* {
                 const auto size = Traits::ImageSize<Image>::get(image);
                 PyObjectWrapper pydata = check([&] () { return PyList_New(size[0]); });
                 if (!pydata)
-                    return false;
+                    return nullptr;
 
                 // PyList_Set_Item "steals" a reference, so we don't have to decrement
                 for (std::size_t y = 0; y < size[0]; ++y) {
@@ -408,8 +408,9 @@ namespace detail {
                         ).release());
                     PyList_SET_ITEM(static_cast<PyObject*>(pydata), y, row);
                 }
-                PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", static_cast<PyObject*>(pydata));
-                return static_cast<bool>(result);
+                return check([&] () {
+                    return PyObject_CallMethod(_axis, "imshow", "O", static_cast<PyObject*>(pydata));
+                });
             });
         }
 
@@ -439,7 +440,32 @@ class Figure {
 
     template<typename Image>
     bool set_image(const Image& image) {
-        return detail::Axis{_mpl, _axis}.set_image(image);
+        _image = detail::Axis{_mpl, _axis}.set_image(image);
+        return static_cast<bool>(_image);
+    }
+
+    bool add_colorbar() {
+        if (!_image.has_value())
+            throw std::runtime_error("Cannot add colorbar; no image has been set");
+
+        return detail::pycall([&] () -> bool {
+            using detail::PyObjectWrapper;
+            using detail::check;
+            PyObjectWrapper args = PyTuple_New(0);
+            PyObjectWrapper kwargs = check([&] () {
+                return Py_BuildValue(
+                    "{s:O,s:O}",
+                    "mappable", static_cast<PyObject*>(*_image),
+                    "ax", static_cast<PyObject*>(_axis)
+                );
+            });
+            PyObjectWrapper function = check([&] () {
+                return PyObject_GetAttrString(_mpl, "colorbar");
+            });
+            if (!function || !kwargs)
+                return false;
+            return check([&] () { return PyObject_Call(function, args, kwargs); });
+        });
     }
 
     bool close() {
@@ -467,6 +493,7 @@ class Figure {
     detail::PyObjectWrapper _mpl;
     detail::PyObjectWrapper _fig;
     detail::PyObjectWrapper _axis;
+    std::optional<detail::PyObjectWrapper> _image;
 };
 
 

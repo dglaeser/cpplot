@@ -69,9 +69,11 @@ int main() {
 
     "plot_image"_test = [&] () {
         set_style("default");
-        expect(figure().set_image(
+        auto fig = figure();
+        expect(fig.set_image(
             std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
         ));
+        expect(fig.add_colorbar());
     };
 
     show_all_figures(false);
