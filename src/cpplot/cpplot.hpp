@@ -60,65 +60,50 @@ namespace detail {
         b = c;
     }
 
-}  // namespace detail
-#endif  // DOXYGEN
+    struct WeakReference {};
 
+    class PyObjectWrapper {
+    public:
+        ~PyObjectWrapper() { detail::pycall([&] () { if (_p) Py_DECREF(_p); }); }
 
-namespace ReferenceType {
+        PyObjectWrapper() = default;
+        PyObjectWrapper(PyObject* p) : _p{p} {}
+        PyObjectWrapper(PyObject* p, WeakReference) : _p{p} { pycall([&] () { if (_p) Py_INCREF(_p); }); }
 
-//! Indicate that a PyObject pointer passed as argument does not "own" a reference
-struct Weak {};
+        PyObjectWrapper(const PyObjectWrapper& other) : PyObjectWrapper{other._p, WeakReference{}} {}
+        PyObjectWrapper(PyObjectWrapper&& other) : PyObjectWrapper{nullptr} { swap_pyobjects(_p, other._p); }
 
-}  // namespace ReferenceType
+        PyObjectWrapper& operator=(const PyObjectWrapper& other) {
+            *this = PyObjectWrapper{other};
+            return *this;
+        }
 
+        PyObjectWrapper& operator=(PyObjectWrapper&& other) {
+            swap_pyobjects(_p, other._p);
+            return *this;
+        }
 
-//! RAII wrapper around a PyObject pointer
-class PyObjectWrapper {
- public:
-    ~PyObjectWrapper() { detail::pycall([&] () { if (_p) Py_DECREF(_p); }); }
+        PyObject* release() {
+            PyObject* tmp = _p;
+            _p = nullptr;
+            return tmp;
+        }
 
-    PyObjectWrapper() = default;
-    PyObjectWrapper(PyObject* p) : _p{p} {}
-    PyObjectWrapper(PyObject* p, ReferenceType::Weak) : _p{p} { detail::pycall([&] () { if (_p) Py_INCREF(_p); }); }
+        PyObject* get() {
+            return _p;
+        }
 
-    PyObjectWrapper(const PyObjectWrapper& other) : PyObjectWrapper{other._p, ReferenceType::Weak{}} {}
-    PyObjectWrapper(PyObjectWrapper&& other) : PyObjectWrapper{nullptr} { detail::swap_pyobjects(_p, other._p); }
+        operator PyObject*() const {
+            return _p;
+        }
 
-    PyObjectWrapper& operator=(const PyObjectWrapper& other) {
-        *this = PyObjectWrapper{other};
-        return *this;
-    }
+        operator bool() const {
+            return static_cast<bool>(_p);
+        }
 
-    PyObjectWrapper& operator=(PyObjectWrapper&& other) {
-        detail::swap_pyobjects(_p, other._p);
-        return *this;
-    }
-
-    PyObject* release() {
-        PyObject* tmp = _p;
-        _p = nullptr;
-        return tmp;
-    }
-
-    PyObject* get() {
-        return _p;
-    }
-
-    operator PyObject*() const {
-        return _p;
-    }
-
-    operator bool() const {
-        return static_cast<bool>(_p);
-    }
-
- private:
-    PyObject* _p{nullptr};
-};
-
-
-#ifndef DOXYGEN
-namespace detail {
+    private:
+        PyObject* _p{nullptr};
+    };
 
     template<typename... T>
     struct are_unique;
@@ -281,28 +266,6 @@ class Kwargs : private T... {
     const auto& get(const Key& key) const {
         return access_with(key);
     }
-
-    //! Return a representation as PyObject
-    PyObjectWrapper as_pyobject() const {
-        if constexpr (sizeof...(T) == 0)
-            return nullptr;
-
-        const auto as_buildvalue_arg = detail::OverloadSet{
-            [] (const std::string& s) { return s.c_str(); },
-            [] (const auto& arg) { return arg; }
-        };
-
-        std::string format;
-        (..., (format += ",s:" + detail::kwargs_format_for(get(typename T::KeyType{}))));
-        format = "{" + format.substr(1) + "}";
-        PyObject* result = std::apply(
-            [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
-            std::tuple_cat(std::tuple{T::KeyType::name().c_str(), get(typename T::KeyType{})}...)
-        );
-        if (!result)
-            throw std::runtime_error("Conversion to PyObject failed.");
-        return result;
-    }
 };
 
 template<typename... T>
@@ -322,8 +285,8 @@ class LinePlot {
         return _from(Kwargs{std::move(a), std::move(b)});
     }
 
-    PyObjectWrapper x() const { return _x; }
-    PyObjectWrapper y() const { return _y; }
+    detail::PyObjectWrapper x() const { return _x; }
+    detail::PyObjectWrapper y() const { return _y; }
 
  private:
     template<typename... T>
@@ -339,8 +302,8 @@ class LinePlot {
     , _y{detail::as_pylist(y)}
     {}
 
-    PyObjectWrapper _x;
-    PyObjectWrapper _y;
+    detail::PyObjectWrapper _x;
+    detail::PyObjectWrapper _y;
 };
 
 
@@ -372,10 +335,39 @@ struct ImageAccess<std::vector<std::vector<T>>> {
 }  // namespace Traits
 
 
+#ifndef DOXYGEN
+namespace detail {
+
+    template<typename... T>
+    PyObjectWrapper as_pyobject(const Kwargs<T...>& kwargs) {
+        if constexpr (sizeof...(T) == 0)
+            return nullptr;
+
+        const auto as_buildvalue_arg = OverloadSet{
+            [] (const std::string& s) { return s.c_str(); },
+            [] (const auto& arg) { return arg; }
+        };
+
+        std::string format;
+        (..., (format += ",s:" + kwargs_format_for(kwargs.get(typename T::KeyType{}))));
+        format = "{" + format.substr(1) + "}";
+        PyObject* result = std::apply(
+            [&] (const auto&... args) { return Py_BuildValue(format.c_str(), as_buildvalue_arg(args)...); },
+            std::tuple_cat(std::tuple{T::KeyType::name().c_str(), kwargs.get(typename T::KeyType{})}...)
+        );
+        if (!result)
+            throw std::runtime_error("Conversion to PyObject failed.");
+        return result;
+    }
+
+}  // namespace detail
+#endif  // DOXYGEN
+
+
 //! Class to represent an axis to which plots can be added
 class Axis {
  public:
-    explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
+    explicit Axis(detail::PyObjectWrapper mpl, detail::PyObjectWrapper axis)
     : _mpl{std::move(mpl)}
     , _axis{std::move(axis)} {
         assert(_mpl);
@@ -391,12 +383,12 @@ class Axis {
     template<typename... T>
     bool add(const LinePlot& p, const Kwargs<T...>& kwargs) {
         return detail::pycall([&] () {
-            PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
-            PyObjectWrapper args = Py_BuildValue("OO", p.x().release(), p.y().release());
+            detail::PyObjectWrapper function = PyObject_GetAttrString(_axis, "plot");
+            detail::PyObjectWrapper args = Py_BuildValue("OO", p.x().release(), p.y().release());
             if (function && args) {
-                PyObjectWrapper lines = PyObject_Call(function, args, kwargs.as_pyobject());
+                detail::PyObjectWrapper lines = PyObject_Call(function, args, detail::as_pyobject(kwargs));
                 if constexpr (Kwargs<T...>::template has_key<Label>)
-                    PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
+                    detail::PyObjectWrapper{PyObject_CallMethod(_axis, "legend", nullptr)};
                 if (lines)
                     return true;
             }
@@ -418,23 +410,23 @@ class Axis {
                     ).release());
                 PyList_SET_ITEM(pydata, y, row);
             }
-            PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", pydata);
+            detail::PyObjectWrapper result = PyObject_CallMethod(_axis, "imshow", "O", pydata);
             return static_cast<bool>(result);
         });
     }
 
  private:
-    PyObjectWrapper _mpl;
-    PyObjectWrapper _axis;
+    detail::PyObjectWrapper _mpl;
+    detail::PyObjectWrapper _axis;
 };
 
 //! Class to represent a figure
 class Figure {
  public:
     explicit Figure(std::size_t id,
-                    PyObjectWrapper mpl,
-                    PyObjectWrapper fig,
-                    PyObjectWrapper axis)
+                    detail::PyObjectWrapper mpl,
+                    detail::PyObjectWrapper fig,
+                    detail::PyObjectWrapper axis)
     : _id{id}
     , _mpl{mpl}
     , _fig{fig}
@@ -457,16 +449,16 @@ class Figure {
 
     bool close() {
         return detail::pycall([&] () {
-            PyObjectWrapper result = PyObject_CallMethod(_mpl, "close", "i", _id);
+            detail::PyObjectWrapper result = PyObject_CallMethod(_mpl, "close", "i", _id);
             return result != nullptr;
         });
     }
 
  private:
     std::size_t _id;
-    PyObjectWrapper _mpl;
-    PyObjectWrapper _fig;
-    PyObjectWrapper _axis;
+    detail::PyObjectWrapper _mpl;
+    detail::PyObjectWrapper _fig;
+    detail::PyObjectWrapper _axis;
 };
 
 
@@ -619,7 +611,7 @@ std::vector<std::size_t> get_all_figure_ids() {
 std::vector<Figure> get_all_figures() {
     const auto ids = get_all_figure_ids();
     std::vector<Figure> figs; figs.reserve(ids.size());
-    for (auto id : ids)
+    for (const auto id : ids)
         figs.push_back(figure(id));
     return figs;
 }
