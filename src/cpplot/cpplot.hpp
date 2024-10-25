@@ -454,10 +454,7 @@ class Figure {
     };
 
  public:
-    //! Return this figure's identifier
-    std::size_t id() const {
-        return _id;
-    }
+    ~Figure() { close(); }
 
     //! Return the number of axis rows
     std::size_t ny() const {
@@ -568,38 +565,11 @@ namespace detail {
             return wrapper;
         }
 
-        Figure reopen_figure(std::size_t id) {
-            if (!figure_exists(id))
-                throw std::runtime_error("Figure with the given id does not exist.");
-
-            PyObjectWrapper fig = check([&] () { return PyObject_CallMethod(_mpl, "figure", "i", id); });
-            PyObjectWrapper axes = check([&] () { return PyObject_GetAttrString(fig, "axes"); });
-            assert(PyList_Check(axes));
-            const std::size_t count = PyList_Size(axes);
-            if (count == 1)
-                return Figure{id, _mpl, fig, Py_NewRef(PyList_GetItem(axes, 0))};
-
-            PyObjectWrapper grid_spec = check([&] () {
-                return PyObject_CallMethod(PyList_GetItem(axes, 0), "get_gridspec", nullptr);
-            });
-            long nrows = pyobject_to_long(check([&] () { return PyObject_GetAttrString(grid_spec, "nrows"); }));
-            long ncols = pyobject_to_long(check([&] () { return PyObject_GetAttrString(grid_spec, "ncols"); }));
-
-            std::vector<PyObjectWrapper> ax_vec;
-            ax_vec.reserve(count);
-            for (std::size_t i = 0; i < count; ++i)
-                ax_vec.push_back(Py_NewRef(PyList_GetItem(axes, i)));
-            return Figure{id, _mpl, fig, ax_vec, static_cast<std::size_t>(nrows), static_cast<std::size_t>(ncols)};
-        }
-
-        Figure figure(std::optional<std::size_t> id = {}, std::size_t ny = 1, std::size_t nx = 1) {
+        Figure figure(std::size_t ny = 1, std::size_t nx = 1) {
             if (ny == 0 || nx == 0)
                 throw std::runtime_error("Number of rows/cols must be non-zero.");
 
-            if (id.has_value() && figure_exists(*id))
-                return reopen_figure(*id);
-
-            const std::size_t fig_id = id.value_or(_get_unused_fig_id());
+            const std::size_t fig_id = _get_unused_fig_id();
             PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
                 PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "subplots"); });
                 if (!function) return nullptr;
@@ -651,20 +621,11 @@ namespace detail {
             });
         }
 
-        std::vector<std::size_t> get_fig_ids() const {
+        std::size_t number_of_active_figures() const {
             return pycall([&] () {
                 PyObjectWrapper result = check([&] () { return PyObject_CallMethod(_mpl, "get_fignums", nullptr); });
                 assert(PyList_Check(result));
-
-                const std::size_t size = PyList_Size(result);
-                std::vector<std::size_t> ids; ids.reserve(size);
-                for (std::size_t i = 0; i < size; ++i) {
-                    PyObjectWrapper item = check([&] () { return Py_NewRef(PyList_GetItem(result, i)); });
-                    assert(PyLong_Check(item));
-                    ids.push_back(PyLong_AsLong(item));
-                }
-
-                return ids;
+                return PyList_Size(result);
             });
         }
 
@@ -678,14 +639,6 @@ namespace detail {
                 PyObjectWrapper args = PyTuple_New(0);
                 PyObjectWrapper kwargs = Py_BuildValue("{s:O}", "block", pyblock);
                 PyObjectWrapper result = check([&] () { return PyObject_Call(function, args, kwargs); });
-            });
-        }
-
-        void close_all() const {
-            pycall([&] () {
-                PyObjectWrapper{check([&] () {
-                    return PyObject_CallMethod(_mpl, "close", "s", "all"); }
-                )};
             });
         }
 
@@ -721,43 +674,19 @@ namespace detail {
 }  // namespace detail
 #endif  // DOXYGEN
 
-//! Create a new figure
-Figure figure(std::optional<std::size_t> id = {}) {
-    return detail::MPLWrapper::instance().figure(id);
+//! Create a new figure containing a single axis
+Figure figure() {
+    return detail::MPLWrapper::instance().figure();
 }
 
-//! Create a new figure matrix
-Figure figure_matrix(std::size_t ny, std::size_t nx) {
-    return detail::MPLWrapper::instance().figure({}, ny, nx);
-}
-
-//! Return true if a figure with the given id exists
-bool figure_exists(std::size_t id) {
-    return detail::MPLWrapper::instance().figure_exists(id);
+//! Create a new figure with multiple axes arranged in the given number of rows & columns
+Figure figure(std::size_t nrows, std::size_t ncols) {
+    return detail::MPLWrapper::instance().figure(nrows, ncols);
 }
 
 //! Show all figures
 void show_all_figures(std::optional<bool> block = {}) {
     detail::MPLWrapper::instance().show_all(block);
-}
-
-//! Close all figures
-void close_all_figures() {
-    detail::MPLWrapper::instance().close_all();
-}
-
-//! Get the ids of all registered figures
-std::vector<std::size_t> get_all_figure_ids() {
-    return detail::MPLWrapper::instance().get_fig_ids();
-}
-
-//! Get all registered figures
-std::vector<Figure> get_all_figures() {
-    const auto ids = get_all_figure_ids();
-    std::vector<Figure> figs; figs.reserve(ids.size());
-    for (const auto id : ids)
-        figs.push_back(figure(id));
-    return figs;
 }
 
 //! Set a matplotlib style to be used in newly created figures

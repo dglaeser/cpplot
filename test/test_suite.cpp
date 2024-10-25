@@ -13,20 +13,12 @@ int main() {
 
     set_style("ggplot");
 
-    "plot_fig_id"_test = [&] () {
-        expect(!figure_exists(42));
-        figure(42);
-        expect(figure_exists(42));
-    };
-
     "plot_fig_close"_test = [&] () {
-        expect(!figure_exists(43));
-        auto fig = figure(43);
-        expect(figure_exists(43));
+        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
+        auto fig = figure();
+        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{1}));
         expect(fig.close());
-        expect(!figure_exists(43));
-        figure(43);
-        expect(figure_exists(43));
+        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
     };
 
     "plot_values"_test = [&] () {
@@ -77,7 +69,7 @@ int main() {
     };
 
     "figure_matrix"_test = [&] () {
-        auto fig_matrix = figure_matrix(1, 2);
+        auto fig_matrix = figure(1, 2);
         auto& img = fig_matrix.at(0, 0);
         img.set_image(std::vector<std::vector<double>>{
             {1, 2, 3},
@@ -86,29 +78,6 @@ int main() {
         img.add_colorbar();
 
         fig_matrix.at(0, 1).plot(std::vector{1, 2, 3}, std::vector{4, 5, 6}, with("label"_kw = "some_label"));
-    };
-
-    show_all_figures(false);
-
-    "get_all"_test = [&] () {
-        const auto ids = get_all_figure_ids();
-        auto figs = get_all_figures();
-        expect(eq(ids.size(), figs.size()));
-        expect(std::all_of(figs.begin(), figs.end(), [&] (const auto& fig) {
-            return std::count(ids.begin(), ids.end(), fig.id());
-        }));
-        for (auto& fig : figs)
-            fig.close();
-        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
-    };
-
-    "close_all"_test = [] () {
-        figure();
-        figure();
-        figure();
-        expect(ge(get_all_figure_ids().size(), std::size_t{3}));
-        close_all_figures();
-        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
     };
 
     return 0;
