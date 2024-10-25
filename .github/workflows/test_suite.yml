@@ -55,6 +55,7 @@ jobs:
           echo "cmake_minimum_required(VERSION 3.18)" > CMakeLists.txt
           echo "project(cpplot_submodule_test)" >> CMakeLists.txt
           echo "set(CPPLOT_INCLUDE_TESTS OFF)" >> CMakeLists.txt
+          echo "set(CPPLOT_INCLUDE_EXAMPLES OFF)" >> CMakeLists.txt
           echo "add_subdirectory(cpplot)" >> CMakeLists.txt
           echo "enable_testing()" >> CMakeLists.txt
           echo "add_subdirectory(test)" >> CMakeLists.txt
