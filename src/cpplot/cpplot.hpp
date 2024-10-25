@@ -122,24 +122,6 @@ namespace detail {
         PyObject* _p{nullptr};
     };
 
-    template<typename... T>
-    struct are_unique;
-    template<typename T1, typename T2, typename... Ts>
-    struct are_unique<T1, T2, Ts...> {
-        static constexpr bool value =
-            are_unique<T1, T2>::value &&
-            are_unique<T1, Ts...>::value &&
-            are_unique<T2, Ts...>::value;
-    };
-    template<typename T1, typename T2>
-    struct are_unique<T1, T2> : std::bool_constant<!std::is_same_v<T1, T2>> {};
-    template<typename T>
-    struct are_unique<T> : std::true_type {};
-    template<>
-    struct are_unique<> : std::true_type {};
-    template<typename... Ts>
-    inline constexpr bool are_unique_v = are_unique<Ts...>::value;
-
     template<typename... Ts>
     struct OverloadSet : Ts... { using Ts::operator()...; };
     template<typename... Ts> OverloadSet(Ts...) -> OverloadSet<Ts...>;
@@ -358,98 +340,78 @@ namespace detail {
         return result;
     }
 
-    class Axis {
-    public:
-        explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
-        : _mpl{std::move(mpl)}
-        , _axis{std::move(axis)} {
-            assert(_mpl);
-            assert(_axis);
-        }
-
-        //! Add a line plot to this axis
-        template<std::ranges::range X, std::ranges::range Y>
-        bool plot(X&& x, Y&& y) {
-            return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
-        }
-
-        //! Add a line plot to this axis with additional kwargs to be forwarded
-        template<std::ranges::range X, std::ranges::range Y, typename... T>
-        bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
-            return pycall([&] () {
-                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_axis, "plot"); });
-                PyObjectWrapper args = check([&] () { return Py_BuildValue("OO", as_pylist(x).release(), as_pylist(y).release()); });
-                if (function && args) {
-                    PyObjectWrapper lines = check([&] () { return PyObject_Call(function, args, as_pyobject(kwargs)); });
-                    if (kwargs.has_key("label"))
-                        PyObjectWrapper{check([&] () { return PyObject_CallMethod(_axis, "legend", nullptr); })};
-                    if (lines)
-                        return true;
-                }
-                PyErr_Print();
-                return false;
-            });
-        }
-
-        template<typename Image>
-        PyObjectWrapper set_image(const Image& image) {
-            return pycall([&] () -> PyObject* {
-                const auto size = Traits::ImageSize<Image>::get(image);
-                PyObjectWrapper pydata = check([&] () { return PyList_New(size[0]); });
-                if (!pydata)
-                    return nullptr;
-
-                // PyList_Set_Item "steals" a reference, so we don't have to decrement
-                for (std::size_t y = 0; y < size[0]; ++y) {
-                    PyObject* row = check([&] () { return PyList_New(size[1]); });
-                    for (std::size_t x = 0; x < size[1]; ++x)
-                        PyList_SET_ITEM(row, x, value_to_pyobject(
-                            Traits::ImageAccess<Image>::at({y, x}, image)
-                        ).release());
-                    PyList_SET_ITEM(static_cast<PyObject*>(pydata), y, row);
-                }
-                return check([&] () {
-                    return PyObject_CallMethod(_axis, "imshow", "O", static_cast<PyObject*>(pydata));
-                });
-            });
-        }
-
-    private:
-        PyObjectWrapper _mpl;
-        PyObjectWrapper _axis;
-    };
-
     // forward declarations
-    class FigureFactory;
+    class MPLWrapper;
 
 }  // namespace detail
 #endif  // DOXYGEN
 
+// forward declaration
+class Figure;
 
-//! Class to represent a figure
-class Figure {
+//! Class to represent an axis for plotting lines, images, histograms, etc..
+class Axis {
+    using PyObjectWrapper = detail::PyObjectWrapper;
  public:
-    std::size_t id() const {
-        return _id;
+    //! Add a line plot to this axis
+    template<std::ranges::range X, std::ranges::range Y>
+    bool plot(X&& x, Y&& y) {
+        return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
     }
 
-    template<typename... Args>
-    bool plot(Args&&... args) {
-        return detail::Axis{_mpl, _axis}.plot(std::forward<Args>(args)...);
+    //! Add a line plot to this axis with additional kwargs to be forwarded
+    template<std::ranges::range X, std::ranges::range Y, typename... T>
+    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
+        return detail::pycall([&] () {
+            PyObjectWrapper function = detail::check([&] () {
+                return PyObject_GetAttrString(_axis, "plot");
+            });
+            PyObjectWrapper args = detail::check([&] () {
+                return Py_BuildValue("OO", detail::as_pylist(x).release(), detail::as_pylist(y).release());
+            });
+            if (function && args) {
+                PyObjectWrapper lines = detail::check([&] () { return PyObject_Call(function, args, detail::as_pyobject(kwargs)); });
+                if (kwargs.has_key("label"))
+                    PyObjectWrapper{detail::check([&] () { return PyObject_CallMethod(_axis, "legend", nullptr); })};
+                if (lines)
+                    return true;
+            }
+            PyErr_Print();
+            return false;
+        });
     }
 
-    template<typename Image>
+    //! Plot an image on this axie
+    template<typename Image>  // constrain on image concept
     bool set_image(const Image& image) {
-        _image = detail::Axis{_mpl, _axis}.set_image(image);
+        _image = detail::pycall([&] () -> PyObject* {
+            const auto size = Traits::ImageSize<Image>::get(image);
+            PyObjectWrapper pydata = detail::check([&] () { return PyList_New(size[0]); });
+            if (!pydata)
+                return nullptr;
+
+            // PyList_Set_Item "steals" a reference, so we don't have to decrement
+            for (std::size_t y = 0; y < size[0]; ++y) {
+                PyObject* row = detail::check([&] () { return PyList_New(size[1]); });
+                for (std::size_t x = 0; x < size[1]; ++x)
+                    PyList_SET_ITEM(row, x, detail::value_to_pyobject(
+                        Traits::ImageAccess<Image>::at({y, x}, image)
+                    ).release());
+                PyList_SET_ITEM(static_cast<PyObject*>(pydata), y, row);
+            }
+            return detail::check([&] () {
+                return PyObject_CallMethod(_axis, "imshow", "O", static_cast<PyObject*>(pydata));
+            });
+        });
         return static_cast<bool>(_image);
     }
 
+    //! Add a colorbar to a previously added image (throws if no image had been set)
     bool add_colorbar() {
         if (!_image.has_value())
             throw std::runtime_error("Cannot add colorbar; no image has been set");
 
         return detail::pycall([&] () -> bool {
-            using detail::PyObjectWrapper;
             using detail::check;
             PyObjectWrapper args = PyTuple_New(0);
             PyObjectWrapper kwargs = check([&] () {
@@ -468,6 +430,80 @@ class Figure {
         });
     }
 
+ private:
+    friend class Figure;
+    explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
+    : _mpl{std::move(mpl)}
+    , _axis{std::move(axis)} {
+        assert(_mpl);
+        assert(_axis);
+    }
+
+    PyObjectWrapper _mpl;
+    PyObjectWrapper _axis;
+    std::optional<detail::PyObjectWrapper> _image;
+};
+
+
+//! Class to represent a figure, i.e. a canvas containing one or more axes
+class Figure {
+    struct Grid {
+        std::size_t ny;
+        std::size_t nx;
+
+        std::size_t count() const {
+            return ny*nx;
+        }
+    };
+
+ public:
+    //! Return this figure's identifier
+    std::size_t id() const {
+        return _id;
+    }
+
+    //! Return the number of axis rows
+    std::size_t ny() const {
+        return _grid.ny;
+    }
+
+    //! Return the number of axis columns
+    std::size_t nx() const {
+        return _grid.nx;
+    }
+
+    //! Return the axis at the given row and column
+    Axis& at(std::size_t y, std::size_t x) {
+        if (y >= _grid.ny) throw std::runtime_error("y-index out of bounds.");
+        if (x >= _grid.nx) throw std::runtime_error("x-index out of bounds.");
+        return _axes.at(y*_grid.nx + x);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool plot(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its plot function.");
+        return _axes[0].plot(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_image(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_image(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool add_colorbar(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].add_colorbar(std::forward<Args>(args)...);
+    }
+
+    //! Close this figure
     bool close() {
         return detail::pycall([&] () {
             detail::PyObjectWrapper result = detail::check([&] () {
@@ -478,21 +514,43 @@ class Figure {
     }
 
  private:
-    friend class detail::FigureFactory;
+    friend class detail::MPLWrapper;
+
+    // constructor for figures with a single axis
     explicit Figure(std::size_t id,
                     detail::PyObjectWrapper mpl,
                     detail::PyObjectWrapper fig,
                     detail::PyObjectWrapper axis)
     : _id{id}
+    , _grid{1, 1}
     , _mpl{mpl}
-    , _fig{fig}
-    , _axis{axis}
-    {}
+    , _fig{fig} {
+        _axes.push_back(Axis{mpl, axis});
+    }
+
+    // constructor for figures with a grid of axes
+    explicit Figure(std::size_t id,
+                    detail::PyObjectWrapper mpl,
+                    detail::PyObjectWrapper fig,
+                    std::vector<detail::PyObjectWrapper> axes,
+                    std::size_t ny,
+                    std::size_t nx)
+    : _id{id}
+    , _grid{ny, nx}
+    , _mpl{mpl}
+    , _fig{fig} {
+        if (axes.size() != _grid.count())
+            throw std::runtime_error("Number of axes does not match the given grid layout.");
+        _axes.reserve(axes.size());
+        for (std::size_t i = 0; i < axes.size(); ++i)
+            _axes.push_back(Axis{mpl, axes[i]});
+    }
 
     std::size_t _id;
+    Grid _grid;
     detail::PyObjectWrapper _mpl;
     detail::PyObjectWrapper _fig;
-    detail::PyObjectWrapper _axis;
+    std::vector<Axis> _axes;
     std::optional<detail::PyObjectWrapper> _image;
 };
 
@@ -500,61 +558,11 @@ class Figure {
 #ifndef DOXYGEN
 namespace detail {
 
-    class FigureFactory {
-     public:
-        static Figure make(std::size_t id,
-                           PyObjectWrapper mpl,
-                           PyObjectWrapper fig,
-                           PyObjectWrapper axis) {
-            return Figure{id, mpl, fig, axis};
-        }
-    };
-
-    // forward declaration
-    class MPLWrapper;
-
-}  // namespace detail
-#endif  // DOXYGEN
-
-
-//! A figure with a matrix of sub-figures
-class FigureMatrix {
- public:
-    struct FigureLocation {
-        std::size_t y;
-        std::size_t x;
-    };
-
-    Figure& operator[](const FigureLocation& loc) {
-        if (loc.y >= _ny) throw std::runtime_error("y-index out of bounds");
-        if (loc.x >= _nx) throw std::runtime_error("x-index out of bounds");
-        return _subfigures[loc.y*_nx + loc.x];
+    long pyobject_to_long(PyObject* pyobj) {
+        if (!PyLong_Check(pyobj))
+            throw std::runtime_error("Given object does not represent an integer");
+        return PyLong_AsLong(pyobj);
     }
-
- private:
-    friend class detail::MPLWrapper;
-    explicit FigureMatrix(std::size_t id,
-                    detail::PyObjectWrapper mpl,
-                    detail::PyObjectWrapper fig,
-                    std::vector<detail::PyObjectWrapper> axes,
-                    std::size_t ny,
-                    std::size_t nx)
-    : _ny{ny}
-    , _nx{nx} {
-        assert(axes.size() == ny*nx);
-        for (std::size_t y = 0; y < ny; ++y)
-            for (std::size_t x = 0; x < nx; ++x)
-                _subfigures.push_back(detail::FigureFactory::make(id, mpl, fig, axes[y*nx + x]));
-    }
-
-    std::size_t _ny;
-    std::size_t _nx;
-    std::vector<Figure> _subfigures;
-};
-
-
-#ifndef DOXYGEN
-namespace detail {
 
     class MPLWrapper {
      public:
@@ -563,40 +571,38 @@ namespace detail {
             return wrapper;
         }
 
-        Figure figure(std::optional<std::size_t> id = {}) {
-            if (id.has_value() && figure_exists(*id)) {
-                PyObjectWrapper fig = check([&] () { return PyObject_CallMethod(_mpl, "figure", "i", id); });
-                PyObjectWrapper axis = check([&] () { return PyObject_CallMethod(_mpl, "gca", nullptr); });
-                return FigureFactory::make(*id, _mpl, fig, axis);
-            }
+        Figure reopen_figure(std::size_t id) {
+            if (!figure_exists(id))
+                throw std::runtime_error("Figure with the given id does not exist.");
 
-            const std::size_t fig_id = id.value_or(_get_unused_fig_id());
-            PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
-                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "subplots"); });
-                if (!function) return nullptr;
-                PyObjectWrapper args = PyTuple_New(0);
-                PyObjectWrapper kwargs = Py_BuildValue("{s:i}", "num", fig_id);
-                return check([&] () { return PyObject_Call(function, args, kwargs); });
-            });
+            PyObjectWrapper fig = check([&] () { return PyObject_CallMethod(_mpl, "figure", "i", id); });
+            PyObjectWrapper axes = check([&] () { return PyObject_GetAttrString(fig, "axes"); });
+            assert(PyList_Check(axes));
+            const std::size_t count = PyList_Size(axes);
+            if (count == 1)
+                return Figure{id, _mpl, fig, Py_NewRef(PyList_GetItem(axes, 0))};
 
-            auto [fig, axis] = pycall([&] () {
-                assert(PyTuple_Check(fig_axis_tuple));
-                PyObjectWrapper fig = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 0)); });
-                PyObjectWrapper axis = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 1)); });
-                if (!axis || !fig)
-                    throw std::runtime_error("Error creating figure.");
-                return std::make_pair(fig, axis);
+            PyObjectWrapper grid_spec = check([&] () {
+                return PyObject_CallMethod(PyList_GetItem(axes, 0), "get_gridspec", nullptr);
             });
-            return FigureFactory::make(fig_id, _mpl, fig, axis);
+            long nrows = pyobject_to_long(check([&] () { return PyObject_GetAttrString(grid_spec, "nrows"); }));
+            long ncols = pyobject_to_long(check([&] () { return PyObject_GetAttrString(grid_spec, "ncols"); }));
+
+            std::vector<PyObjectWrapper> ax_vec;
+            ax_vec.reserve(count);
+            for (std::size_t i = 0; i < count; ++i)
+                ax_vec.push_back(Py_NewRef(PyList_GetItem(axes, i)));
+            return Figure{id, _mpl, fig, ax_vec, static_cast<std::size_t>(nrows), static_cast<std::size_t>(ncols)};
         }
 
-        FigureMatrix figure_matrix(std::size_t ny, std::size_t nx) {
+        Figure figure(std::optional<std::size_t> id = {}, std::size_t ny = 1, std::size_t nx = 1) {
             if (ny == 0 || nx == 0)
                 throw std::runtime_error("Number of rows/cols must be non-zero.");
 
-            // TODO: check if id exists?
-            const std::size_t fig_id = _get_unused_fig_id();
-            // const std::size_t fig_id = id.value_or(_get_unused_fig_id());
+            if (id.has_value() && figure_exists(*id))
+                return reopen_figure(*id);
+
+            const std::size_t fig_id = id.value_or(_get_unused_fig_id());
             PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
                 PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "subplots"); });
                 if (!function) return nullptr;
@@ -613,6 +619,9 @@ namespace detail {
                     throw std::runtime_error("Error creating figure.");
                 return std::make_pair(fig, axes);
             });
+
+            if (nx*ny == 1)  // axes is a single axis
+                return Figure{fig_id, _mpl, fig, axes};
 
             std::vector<PyObjectWrapper> ax_vec;
             ax_vec.reserve(ny*nx);
@@ -635,7 +644,7 @@ namespace detail {
             });
             if (ax_vec.size() != nx*ny)
                 throw std::runtime_error("Could not create sub-figure axes");
-            return FigureMatrix{fig_id, _mpl, fig, ax_vec, ny, nx};
+            return Figure{fig_id, _mpl, fig, ax_vec, ny, nx};
         }
 
         bool figure_exists(std::size_t id) const {
@@ -653,7 +662,7 @@ namespace detail {
                 const std::size_t size = PyList_Size(result);
                 std::vector<std::size_t> ids; ids.reserve(size);
                 for (std::size_t i = 0; i < size; ++i) {
-                    PyObjectWrapper item = check([&] () { return PyList_GetItem(result, i); });
+                    PyObjectWrapper item = check([&] () { return Py_NewRef(PyList_GetItem(result, i)); });
                     assert(PyLong_Check(item));
                     ids.push_back(PyLong_AsLong(item));
                 }
@@ -721,8 +730,8 @@ Figure figure(std::optional<std::size_t> id = {}) {
 }
 
 //! Create a new figure matrix
-FigureMatrix figure_matrix(std::size_t ny, std::size_t nx) {
-    return detail::MPLWrapper::instance().figure_matrix(ny, nx);
+Figure figure_matrix(std::size_t ny, std::size_t nx) {
+    return detail::MPLWrapper::instance().figure({}, ny, nx);
 }
 
 //! Return true if a figure with the given id exists

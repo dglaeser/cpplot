@@ -76,18 +76,19 @@ int main() {
         expect(fig.add_colorbar());
     };
 
-    show_all_figures(false);
     "figure_matrix"_test = [&] () {
         auto fig_matrix = figure_matrix(1, 2);
-        auto& img = fig_matrix[{0, 0}];
+        auto& img = fig_matrix.at(0, 0);
         img.set_image(std::vector<std::vector<double>>{
             {1, 2, 3},
             {4, 5, 6}
         });
         img.add_colorbar();
 
-        fig_matrix[{0, 1}].plot(std::vector{1, 2, 3}, std::vector{4, 5, 6}, with("label"_kw = "some_label"));
+        fig_matrix.at(0, 1).plot(std::vector{1, 2, 3}, std::vector{4, 5, 6}, with("label"_kw = "some_label"));
     };
+
+    show_all_figures(false);
 
     "get_all"_test = [&] () {
         const auto ids = get_all_figure_ids();
