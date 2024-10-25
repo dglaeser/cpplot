@@ -50,7 +50,7 @@ int main() {
     image_and_plot.at({0, 1}).plot(x_values, sine_values);
 
     // let's have a look at all the figures we created
-    show_all_figures();
+    // show_all_figures();
 
     return 0;
 }
