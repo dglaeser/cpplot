@@ -419,8 +419,8 @@ namespace detail {
         PyObjectWrapper _axis;
     };
 
-    // forward declaration
-    class MPLWrapper;
+    // forward declarations
+    class FigureFactory;
 
 }  // namespace detail
 #endif  // DOXYGEN
@@ -478,7 +478,7 @@ class Figure {
     }
 
  private:
-    friend class detail::MPLWrapper;
+    friend class detail::FigureFactory;
     explicit Figure(std::size_t id,
                     detail::PyObjectWrapper mpl,
                     detail::PyObjectWrapper fig,
@@ -500,6 +500,62 @@ class Figure {
 #ifndef DOXYGEN
 namespace detail {
 
+    class FigureFactory {
+     public:
+        static Figure make(std::size_t id,
+                           PyObjectWrapper mpl,
+                           PyObjectWrapper fig,
+                           PyObjectWrapper axis) {
+            return Figure{id, mpl, fig, axis};
+        }
+    };
+
+    // forward declaration
+    class MPLWrapper;
+
+}  // namespace detail
+#endif  // DOXYGEN
+
+
+//! A figure with a matrix of sub-figures
+class FigureMatrix {
+ public:
+    struct FigureLocation {
+        std::size_t y;
+        std::size_t x;
+    };
+
+    Figure& operator[](const FigureLocation& loc) {
+        if (loc.y >= _ny) throw std::runtime_error("y-index out of bounds");
+        if (loc.x >= _nx) throw std::runtime_error("x-index out of bounds");
+        return _subfigures[loc.y*_nx + loc.x];
+    }
+
+ private:
+    friend class detail::MPLWrapper;
+    explicit FigureMatrix(std::size_t id,
+                    detail::PyObjectWrapper mpl,
+                    detail::PyObjectWrapper fig,
+                    std::vector<detail::PyObjectWrapper> axes,
+                    std::size_t ny,
+                    std::size_t nx)
+    : _ny{ny}
+    , _nx{nx} {
+        assert(axes.size() == ny*nx);
+        for (std::size_t y = 0; y < ny; ++y)
+            for (std::size_t x = 0; x < nx; ++x)
+                _subfigures.push_back(detail::FigureFactory::make(id, mpl, fig, axes[y*nx + x]));
+    }
+
+    std::size_t _ny;
+    std::size_t _nx;
+    std::vector<Figure> _subfigures;
+};
+
+
+#ifndef DOXYGEN
+namespace detail {
+
     class MPLWrapper {
      public:
         static MPLWrapper& instance() {
@@ -511,7 +567,7 @@ namespace detail {
             if (id.has_value() && figure_exists(*id)) {
                 PyObjectWrapper fig = check([&] () { return PyObject_CallMethod(_mpl, "figure", "i", id); });
                 PyObjectWrapper axis = check([&] () { return PyObject_CallMethod(_mpl, "gca", nullptr); });
-                return Figure{*id, _mpl, fig, axis};
+                return FigureFactory::make(*id, _mpl, fig, axis);
             }
 
             const std::size_t fig_id = id.value_or(_get_unused_fig_id());
@@ -527,12 +583,59 @@ namespace detail {
                 assert(PyTuple_Check(fig_axis_tuple));
                 PyObjectWrapper fig = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 0)); });
                 PyObjectWrapper axis = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 1)); });
-                if (!axis || !fig) {
+                if (!axis || !fig)
                     throw std::runtime_error("Error creating figure.");
-                }
                 return std::make_pair(fig, axis);
             });
-            return Figure{fig_id, _mpl, fig, axis};
+            return FigureFactory::make(fig_id, _mpl, fig, axis);
+        }
+
+        FigureMatrix figure_matrix(std::size_t ny, std::size_t nx) {
+            if (ny == 0 || nx == 0)
+                throw std::runtime_error("Number of rows/cols must be non-zero.");
+
+            // TODO: check if id exists?
+            const std::size_t fig_id = _get_unused_fig_id();
+            // const std::size_t fig_id = id.value_or(_get_unused_fig_id());
+            PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
+                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "subplots"); });
+                if (!function) return nullptr;
+                PyObjectWrapper args = PyTuple_New(0);
+                PyObjectWrapper kwargs = Py_BuildValue("{s:i,s:i,s:i}", "num", fig_id, "nrows", ny, "ncols", nx);
+                return check([&] () { return PyObject_Call(function, args, kwargs); });
+            });
+
+            auto [fig, axes] = pycall([&] () {
+                assert(PyTuple_Check(fig_axis_tuple));
+                PyObjectWrapper fig = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 0)); });
+                PyObjectWrapper axes = check([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple, 1)); });
+                if (!axes || !fig)
+                    throw std::runtime_error("Error creating figure.");
+                return std::make_pair(fig, axes);
+            });
+
+            std::vector<PyObjectWrapper> ax_vec;
+            ax_vec.reserve(ny*nx);
+            pycall([&] () {
+                assert(PySequence_Check(axes));
+                if (ny > 1) {  // in this case, axes is a 2d numpy array
+                    const auto seq_ny = PySequence_Size(axes);
+                    for (std::size_t y = 0; y < seq_ny; ++y) {
+                        PyObjectWrapper row = PySequence_GetItem(axes, y);
+                        assert(PySequence_Check(row));
+                        const auto seq_nx = PySequence_Size(row);
+                        for (std::size_t x = 0; x < seq_nx; ++x)
+                            ax_vec.push_back(check([&] () { return PySequence_GetItem(row, x); }));
+                    }
+                } else {  // axes is a 1d numpy array
+                    const auto seq_nx = PySequence_Size(axes);
+                    for (std::size_t x = 0; x < seq_nx; ++x)
+                        ax_vec.push_back(check([&] () { return PySequence_GetItem(axes, x); }));
+                }
+            });
+            if (ax_vec.size() != nx*ny)
+                throw std::runtime_error("Could not create sub-figure axes");
+            return FigureMatrix{fig_id, _mpl, fig, ax_vec, ny, nx};
         }
 
         bool figure_exists(std::size_t id) const {
@@ -615,6 +718,11 @@ namespace detail {
 //! Create a new figure
 Figure figure(std::optional<std::size_t> id = {}) {
     return detail::MPLWrapper::instance().figure(id);
+}
+
+//! Create a new figure matrix
+FigureMatrix figure_matrix(std::size_t ny, std::size_t nx) {
+    return detail::MPLWrapper::instance().figure_matrix(ny, nx);
 }
 
 //! Return true if a figure with the given id exists
