@@ -13,20 +13,22 @@ int main() {
 
     set_style("ggplot");
 
-    "plot_fig_id"_test = [&] () {
-        expect(!figure_exists(42));
-        figure(42);
-        expect(figure_exists(42));
+    "fig_close"_test = [&] () {
+        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
+        auto fig = figure();
+        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{1}));
+        expect(fig.close());
+        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
     };
 
-    "plot_fig_close"_test = [&] () {
-        expect(!figure_exists(43));
-        auto fig = figure(43);
-        expect(figure_exists(43));
-        expect(fig.close());
-        expect(!figure_exists(43));
-        figure(43);
-        expect(figure_exists(43));
+    "fig_title"_test = [] () {
+        expect(figure().set_title("title"));
+    };
+
+    "plot_values_default_x_axis"_test = [&] () {
+        expect(figure().plot(
+            std::vector{3.0, 4.0, 5.0}
+        ));
     };
 
     "plot_values"_test = [&] () {
@@ -48,6 +50,13 @@ int main() {
             std::vector{1.0, 2.0, 3.0},
             std::vector{3.0, 4.0, 5.0},
             with(kw("label") = "some_label")
+        ));
+    };
+
+    "plot_values_default_x_axis_with_kwargs"_test = [&] () {
+        expect(figure().plot(
+            std::vector{3.0, 4.0, 5.0},
+            with("label"_kw = "some_label")
         ));
     };
 
@@ -76,27 +85,30 @@ int main() {
         expect(fig.add_colorbar());
     };
 
-    show_all_figures(false);
-
-    "get_all"_test = [&] () {
-        const auto ids = get_all_figure_ids();
-        auto figs = get_all_figures();
-        expect(eq(ids.size(), figs.size()));
-        expect(std::all_of(figs.begin(), figs.end(), [&] (const auto& fig) {
-            return std::count(ids.begin(), ids.end(), fig.id());
-        }));
-        for (auto& fig : figs)
-            fig.close();
-        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
+    "axis_title"_test = [&] () {
+        set_style("default");
+        auto fig = figure();
+        expect(fig.set_title("axis"));
     };
 
-    "close_all"_test = [] () {
-        figure();
-        figure();
-        figure();
-        expect(ge(get_all_figure_ids().size(), std::size_t{3}));
-        close_all_figures();
-        expect(eq(get_all_figure_ids().size(), std::size_t{0}));
+    "figure_matrix_single_row"_test = [&] () {
+        auto fig_matrix = figure({1, 2});
+        auto& img = fig_matrix.at({0, 0});
+        img.set_image(std::vector<std::vector<double>>{
+            {1, 2, 3},
+            {4, 5, 6}
+        });
+        img.add_colorbar();
+
+        fig_matrix.at({0, 1}).plot(std::vector{1, 2, 3}, std::vector{4, 5, 6}, with("label"_kw = "some_label"));
+    };
+
+    "figure_matrix_quadratic"_test = [&] () {
+        auto fig_matrix = figure({.nrows = 2, .ncols = 2});
+    };
+
+    "figure_matrix_single_column"_test = [&] () {
+        auto fig_matrix = figure({2, 1});
     };
 
     return 0;
