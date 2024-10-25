@@ -25,6 +25,12 @@ int main() {
         expect(figure().set_title("title"));
     };
 
+    "plot_values_default_x_axis"_test = [&] () {
+        expect(figure().plot(
+            std::vector{3.0, 4.0, 5.0}
+        ));
+    };
+
     "plot_values"_test = [&] () {
         expect(figure().plot(
             std::vector{1.0, 2.0, 3.0},
@@ -44,6 +50,13 @@ int main() {
             std::vector{1.0, 2.0, 3.0},
             std::vector{3.0, 4.0, 5.0},
             with(kw("label") = "some_label")
+        ));
+    };
+
+    "plot_values_default_x_axis_with_kwargs"_test = [&] () {
+        expect(figure().plot(
+            std::vector{3.0, 4.0, 5.0},
+            with("label"_kw = "some_label")
         ));
     };
 

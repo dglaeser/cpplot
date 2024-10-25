@@ -6,6 +6,7 @@
 #include <vector>
 #include <concepts>
 #include <string_view>
+#include <ranges>
 
 
 #ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
@@ -362,6 +363,22 @@ class Axis {
     template<std::ranges::range X, std::ranges::range Y>
     bool plot(X&& x, Y&& y) {
         return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
+    }
+
+    //! Add a line plot to this axis using the data point indices as x-axis
+    template<std::ranges::sized_range Y>
+    bool plot(Y&& y) {
+        return plot(std::forward<Y>(y), Kwargs<>{});
+    }
+
+    //! Add a line plot to this axis using the data point indices as x-axis + forward additional kwargs
+    template<std::ranges::sized_range Y, typename... T>
+    bool plot(Y&& y, const Kwargs<T...>& kwargs) {
+        return plot(
+            std::views::iota(std::size_t{0}, std::ranges::size(y)),
+            std::forward<Y>(y),
+            kwargs
+        );
     }
 
     //! Add a line plot to this axis with additional kwargs to be forwarded
