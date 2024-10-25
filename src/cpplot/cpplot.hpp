@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 #include <concepts>
+#include <string_view>
 
 
 #ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
@@ -350,6 +351,13 @@ class Figure;
 class Axis {
     using PyObjectWrapper = detail::PyObjectWrapper;
  public:
+    //! Add a title to this axis
+    bool set_title(std::string_view title) {
+        return detail::check([&] () {
+            return PyObject_CallMethod(_axis, "set_title", "s", title.data());
+        });
+    }
+
     //! Add a line plot to this axis
     template<std::ranges::range X, std::ranges::range Y>
     bool plot(X&& x, Y&& y) {
@@ -464,6 +472,13 @@ class Figure {
     //! Return the number of axis columns
     std::size_t nx() const {
         return _grid.nx;
+    }
+
+    //! Add a title to this figure
+    bool set_title(std::string_view title) {
+        return detail::check([&] () {
+            return PyObject_CallMethod(_fig, "suptitle", "s", title.data());
+        });
     }
 
     //! Return the axis at the given row and column

@@ -13,12 +13,16 @@ int main() {
 
     set_style("ggplot");
 
-    "plot_fig_close"_test = [&] () {
+    "fig_close"_test = [&] () {
         expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
         auto fig = figure();
         expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{1}));
         expect(fig.close());
         expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
+    };
+
+    "fig_title"_test = [] () {
+        expect(figure().set_title("title"));
     };
 
     "plot_values"_test = [&] () {
@@ -66,6 +70,12 @@ int main() {
             std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
         ));
         expect(fig.add_colorbar());
+    };
+
+    "axis_title"_test = [&] () {
+        set_style("default");
+        auto fig = figure();
+        expect(fig.set_title("axis"));
     };
 
     "figure_matrix"_test = [&] () {
