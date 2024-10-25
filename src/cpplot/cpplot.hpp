@@ -479,6 +479,11 @@ class Figure {
     };
 
  public:
+    struct AxisLocation {
+        std::size_t row;
+        std::size_t col;
+    };
+
     ~Figure() { close(); }
 
     //! Return the number of axis rows
@@ -499,10 +504,10 @@ class Figure {
     }
 
     //! Return the axis at the given row and column
-    Axis& at(std::size_t y, std::size_t x) {
-        if (y >= _grid.ny) throw std::runtime_error("y-index out of bounds.");
-        if (x >= _grid.nx) throw std::runtime_error("x-index out of bounds.");
-        return _axes.at(y*_grid.nx + x);
+    Axis& at(const AxisLocation& loc) {
+        if (loc.row >= _grid.ny) throw std::runtime_error("row index out of bounds.");
+        if (loc.col >= _grid.nx) throw std::runtime_error("column index out of bounds.");
+        return _axes.at(loc.row*_grid.nx + loc.col);
     }
 
     //! Convenience function for figures with a single axis (throws if multiple axes are defined)
@@ -626,7 +631,11 @@ namespace detail {
             ax_vec.reserve(ny*nx);
             pycall([&] () {
                 assert(PySequence_Check(axes));
-                if (ny > 1) {  // in this case, axes is a 2d numpy array
+                if (ny == 1 || nx == 1) {  // axes is a 1d numpy array
+                    const auto seq_nx = PySequence_Size(axes);
+                    for (std::size_t x = 0; x < seq_nx; ++x)
+                        ax_vec.push_back(check([&] () { return PySequence_GetItem(axes, x); }));
+                } else {  // in this case, axes is a 2d numpy array
                     const auto seq_ny = PySequence_Size(axes);
                     for (std::size_t y = 0; y < seq_ny; ++y) {
                         PyObjectWrapper row = PySequence_GetItem(axes, y);
@@ -635,10 +644,6 @@ namespace detail {
                         for (std::size_t x = 0; x < seq_nx; ++x)
                             ax_vec.push_back(check([&] () { return PySequence_GetItem(row, x); }));
                     }
-                } else {  // axes is a 1d numpy array
-                    const auto seq_nx = PySequence_Size(axes);
-                    for (std::size_t x = 0; x < seq_nx; ++x)
-                        ax_vec.push_back(check([&] () { return PySequence_GetItem(axes, x); }));
                 }
             });
             if (ax_vec.size() != nx*ny)
@@ -706,14 +711,20 @@ namespace detail {
 }  // namespace detail
 #endif  // DOXYGEN
 
+struct AxisLayout {
+    std::size_t nrows;
+    std::size_t ncols;
+};
+
+
 //! Create a new figure containing a single axis
 Figure figure() {
     return detail::MPLWrapper::instance().figure();
 }
 
 //! Create a new figure with multiple axes arranged in the given number of rows & columns
-Figure figure(std::size_t nrows, std::size_t ncols) {
-    return detail::MPLWrapper::instance().figure(nrows, ncols);
+Figure figure(const AxisLayout& layout) {
+    return detail::MPLWrapper::instance().figure(layout.nrows, layout.ncols);
 }
 
 //! Show all figures

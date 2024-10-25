@@ -91,16 +91,24 @@ int main() {
         expect(fig.set_title("axis"));
     };
 
-    "figure_matrix"_test = [&] () {
-        auto fig_matrix = figure(1, 2);
-        auto& img = fig_matrix.at(0, 0);
+    "figure_matrix_single_row"_test = [&] () {
+        auto fig_matrix = figure({1, 2});
+        auto& img = fig_matrix.at({0, 0});
         img.set_image(std::vector<std::vector<double>>{
             {1, 2, 3},
             {4, 5, 6}
         });
         img.add_colorbar();
 
-        fig_matrix.at(0, 1).plot(std::vector{1, 2, 3}, std::vector{4, 5, 6}, with("label"_kw = "some_label"));
+        fig_matrix.at({0, 1}).plot(std::vector{1, 2, 3}, std::vector{4, 5, 6}, with("label"_kw = "some_label"));
+    };
+
+    "figure_matrix_quadratic"_test = [&] () {
+        auto fig_matrix = figure({.nrows = 2, .ncols = 2});
+    };
+
+    "figure_matrix_single_column"_test = [&] () {
+        auto fig_matrix = figure({2, 1});
     };
 
     return 0;
