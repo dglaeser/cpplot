@@ -633,15 +633,15 @@ namespace detail {
                 assert(PySequence_Check(axes));
                 if (ny == 1 || nx == 1) {  // axes is a 1d numpy array
                     const auto seq_nx = PySequence_Size(axes);
-                    for (std::size_t x = 0; x < seq_nx; ++x)
+                    for (Py_ssize_t x = 0; x < seq_nx; ++x)
                         ax_vec.push_back(check([&] () { return PySequence_GetItem(axes, x); }));
                 } else {  // in this case, axes is a 2d numpy array
                     const auto seq_ny = PySequence_Size(axes);
-                    for (std::size_t y = 0; y < seq_ny; ++y) {
+                    for (Py_ssize_t y = 0; y < seq_ny; ++y) {
                         PyObjectWrapper row = PySequence_GetItem(axes, y);
                         assert(PySequence_Check(row));
                         const auto seq_nx = PySequence_Size(row);
-                        for (std::size_t x = 0; x < seq_nx; ++x)
+                        for (Py_ssize_t x = 0; x < seq_nx; ++x)
                             ax_vec.push_back(check([&] () { return PySequence_GetItem(row, x); }));
                     }
                 }
