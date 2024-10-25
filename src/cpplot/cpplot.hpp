@@ -130,11 +130,10 @@ namespace detail {
     PyObjectWrapper value_to_pyobject(const T& t) {
         return PyObjectWrapper{pycall([&] () {
             return OverloadSet{
-                [&] (const double& v) { return PyFloat_FromDouble(v); },
+                [&] (const std::floating_point auto& v) { return PyFloat_FromDouble(static_cast<double>(v)); },
                 [&] (const bool& b) { return b ? Py_True : Py_False; },
-                [&] (const int& i) { return PyLong_FromLong(static_cast<long>(i)); },
-                [&] (const unsigned int& i) { return PyLong_FromUnsignedLong(static_cast<unsigned long>(i)); },
-                [&] (const std::size_t& i) { return PyLong_FromSize_t(i); }
+                [&] (const std::integral auto& i) { return PyLong_FromLong(static_cast<long>(i)); },
+                [&] (const std::unsigned_integral auto& i) { return PyLong_FromSize_t(static_cast<std::size_t>(i)); },
             }(t);
         })};
     }
@@ -155,10 +154,8 @@ namespace detail {
         return pycall([&] () {
             return OverloadSet{
                 [] (const PyObject*) { return "O"; },
-                [] (const double&) { return "f"; },
-                [] (const int&) { return "i"; },
-                [] (const unsigned int&) { return "i"; },
-                [] (const std::size_t&) { return "i"; },
+                [] (const std::floating_point auto&) { return "f"; },
+                [] (const std::integral auto&) { return "i"; },
                 [] (const std::string&) { return "s"; }
             }(t);
         });
