@@ -551,25 +551,44 @@ class Figure {
     //! Adjust the layout of how the axes are arranged (see the [Matplotlib docu] (https://matplotlib.org/stable/api/_as_gen/matplotlib.figure.Figure.subplots_adjust.html) for the supported kwargs)
     template<typename... T>
     bool adjust_layout(const Kwargs<T...>& kwargs) {
-        return detail::PyObjectWrapper{detail::check([&] () -> PyObject* {
-            detail::PyObjectWrapper py_args = detail::check([] () { return PyTuple_New(0); });
-            detail::PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
-            detail::PyObjectWrapper function = detail::check([&] () {
-                return PyObject_GetAttrString(_fig, "subplots_adjust");
-            });
-            if (!function)
-                return nullptr;
-            return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
-        })};
+        return detail::pycall([&] () -> bool {
+            return detail::PyObjectWrapper{detail::check([&] () -> PyObject* {
+                detail::PyObjectWrapper py_args = detail::check([] () { return PyTuple_New(0); });
+                detail::PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+                detail::PyObjectWrapper function = detail::check([&] () {
+                    return PyObject_GetAttrString(_fig, "subplots_adjust");
+                });
+                if (!function)
+                    return nullptr;
+                return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
+            })};
+        });
+    }
+
+    //! Save this figure to the given path
+    bool save_to(const std::string& path) {
+        return detail::pycall([&] () -> bool {
+            return detail::PyObjectWrapper{detail::check([&] () -> PyObject* {
+                detail::PyObjectWrapper function = detail::check([&] () {
+                    return PyObject_GetAttrString(_fig, "savefig");
+                });
+                if (!function)
+                    return nullptr;
+
+                detail::PyObjectWrapper py_kwargs = detail::as_pyobject(with(kw("bbox_inches") = "tight"));
+                detail::PyObjectWrapper py_args = detail::check([&] () { return PyTuple_New(1); });
+                PyTuple_SetItem(py_args, 0, Py_BuildValue("s", path.c_str()));
+                return detail::check([&] () { return PyObject_Call(function, py_args, nullptr); });
+            })};
+        });
     }
 
     //! Close this figure
     bool close() {
-        return detail::pycall([&] () {
-            detail::PyObjectWrapper result = detail::check([&] () {
+        return detail::pycall([&] () -> bool {
+            return detail::PyObjectWrapper{detail::check([&] () {
                 return PyObject_CallMethod(_mpl, "close", "i", _id);
-            });
-            return result != nullptr;
+            })};
         });
     }
 
