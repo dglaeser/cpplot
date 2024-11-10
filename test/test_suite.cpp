@@ -93,6 +93,7 @@ int main() {
 
     "figure_matrix_single_row"_test = [&] () {
         auto fig_matrix = figure({1, 2});
+        fig_matrix.adjust_layout(with("wspace"_kw = 0.8));
         auto& img = fig_matrix.at({0, 0});
         img.set_image(std::vector<std::vector<double>>{
             {1, 2, 3},
