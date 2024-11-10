@@ -111,7 +111,6 @@ int main() {
         );
         fig_matrix.at({0, 1}).set_x_label("x values");
         fig_matrix.at({0, 1}).set_y_label("y values");
-        show_all_figures();
     };
 
     "figure_matrix_quadratic"_test = [&] () {

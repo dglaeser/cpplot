@@ -66,13 +66,6 @@ namespace detail {
         return result;
     }
 
-    template<std::invocable F> requires(std::is_same_v<std::invoke_result_t<F>, int>)
-    inline void check(const F& f) {
-        int err_code = f();
-        if (!err_code)
-            PyErr_Print();
-    }
-
     void swap_pyobjects(PyObject*& a, PyObject*& b) {
         PyObject* c = a;
         a = b;
@@ -351,12 +344,13 @@ class Figure;
 //! Class to represent an axis for plotting lines, images, histograms, etc..
 class Axis {
     using PyObjectWrapper = detail::PyObjectWrapper;
+
  public:
     //! Add a title to this axis
     bool set_title(std::string_view title) {
-        return detail::check([&] () {
+        return PyObjectWrapper{detail::check([&] () {
             return PyObject_CallMethod(_axis, "set_title", "s", title.data());
-        });
+        })};
     }
 
     //! Add a line plot to this axis
@@ -448,13 +442,15 @@ class Axis {
             });
             if (!function || !kwargs)
                 return false;
-            return check([&] () { return PyObject_Call(function, args, kwargs); });
+            return PyObjectWrapper{
+                check([&] () { return PyObject_Call(function, args, kwargs); })
+            };
         });
     }
 
     //! Set the label to be displayed on the x axis
     bool set_x_label(const std::string& label) {
-        return detail::pycall([&] () -> bool {
+        return detail::pycall([&] () -> PyObjectWrapper {
             return detail::check([&] () {
                 return PyObject_CallMethod(_axis, "set_xlabel", "s", label.c_str());
             });
@@ -463,7 +459,7 @@ class Axis {
 
     //! Set the label to be displayed on the y axis
     bool set_y_label(const std::string& label) {
-        return detail::pycall([&] () -> bool {
+        return detail::pycall([&] () -> PyObjectWrapper {
             return detail::check([&] () {
                 return PyObject_CallMethod(_axis, "set_ylabel", "s", label.c_str());
             });
@@ -481,7 +477,7 @@ class Axis {
 
     PyObjectWrapper _mpl;
     PyObjectWrapper _axis;
-    std::optional<detail::PyObjectWrapper> _image;
+    std::optional<PyObjectWrapper> _image;
 };
 
 
@@ -516,9 +512,9 @@ class Figure {
 
     //! Add a title to this figure
     bool set_title(std::string_view title) {
-        return detail::check([&] () {
+        return detail::PyObjectWrapper{detail::check([&] () {
             return PyObject_CallMethod(_fig, "suptitle", "s", title.data());
-        });
+        })};
     }
 
     //! Return the axis at the given row and column
@@ -555,7 +551,7 @@ class Figure {
     //! Adjust the layout of how the axes are arranged (see the [Matplotlib docu] (https://matplotlib.org/stable/api/_as_gen/matplotlib.figure.Figure.subplots_adjust.html) for the supported kwargs)
     template<typename... T>
     bool adjust_layout(const Kwargs<T...>& kwargs) {
-        return detail::check([&] () -> PyObject* {
+        return detail::PyObjectWrapper{detail::check([&] () -> PyObject* {
             detail::PyObjectWrapper py_args = detail::check([] () { return PyTuple_New(0); });
             detail::PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
             detail::PyObjectWrapper function = detail::check([&] () {
@@ -564,7 +560,7 @@ class Figure {
             if (!function)
                 return nullptr;
             return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
-        });
+        })};
     }
 
     //! Close this figure
