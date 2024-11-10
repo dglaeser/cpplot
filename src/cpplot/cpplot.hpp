@@ -452,6 +452,24 @@ class Axis {
         });
     }
 
+    //! Set the label to be displayed on the x axis
+    bool set_x_label(const std::string& label) {
+        return detail::pycall([&] () -> bool {
+            return detail::check([&] () {
+                return PyObject_CallMethod(_axis, "set_xlabel", "s", label.c_str());
+            });
+        });
+    }
+
+    //! Set the label to be displayed on the y axis
+    bool set_y_label(const std::string& label) {
+        return detail::pycall([&] () -> bool {
+            return detail::check([&] () {
+                return PyObject_CallMethod(_axis, "set_ylabel", "s", label.c_str());
+            });
+        });
+    }
+
  private:
     friend class Figure;
     explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)

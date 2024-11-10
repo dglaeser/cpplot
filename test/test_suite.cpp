@@ -96,11 +96,21 @@ int main() {
         auto& img = fig_matrix.at({0, 0});
         img.set_image(std::vector<std::vector<double>>{
             {1, 2, 3},
-            {4, 5, 6}
+            {4, 5, 6},
+            {7, 8, 9}
         });
         img.add_colorbar();
+        img.set_x_label("x values");
+        img.set_y_label("y values");
 
-        fig_matrix.at({0, 1}).plot(std::vector{1, 2, 3}, std::vector{4, 5, 6}, with("label"_kw = "some_label"));
+        fig_matrix.at({0, 1}).plot(
+            std::vector{1, 2, 3},
+            std::vector{4, 5, 6},
+            with("label"_kw = "some_label")
+        );
+        fig_matrix.at({0, 1}).set_x_label("x values");
+        fig_matrix.at({0, 1}).set_y_label("y values");
+        show_all_figures();
     };
 
     "figure_matrix_quadratic"_test = [&] () {
