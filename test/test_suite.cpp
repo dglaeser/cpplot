@@ -1,5 +1,6 @@
 #include <list>
 #include <algorithm>
+#include <filesystem>
 
 #include <boost/ut.hpp>
 
@@ -89,6 +90,14 @@ int main() {
         set_style("default");
         auto fig = figure();
         expect(fig.set_title("axis"));
+    };
+
+    "figure_save"_test = [&] () {
+        auto fig = figure();
+        std::filesystem::remove("some_figure.png");
+        expect(!std::filesystem::exists("some_figure.png"));
+        fig.save_to("some_figure.png");
+        expect(std::filesystem::exists("some_figure.png"));
     };
 
     "figure_matrix_single_row"_test = [&] () {
