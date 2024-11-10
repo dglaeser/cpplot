@@ -552,6 +552,21 @@ class Figure {
         return _axes[0].add_colorbar(std::forward<Args>(args)...);
     }
 
+    //! Adjust the layout of how the axes are arranged (see the [Matplotlib docu] (https://matplotlib.org/stable/api/_as_gen/matplotlib.figure.Figure.subplots_adjust.html) for the supported kwargs)
+    template<typename... T>
+    bool adjust_layout(const Kwargs<T...>& kwargs) {
+        return detail::check([&] () -> PyObject* {
+            detail::PyObjectWrapper py_args = detail::check([] () { return PyTuple_New(0); });
+            detail::PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+            detail::PyObjectWrapper function = detail::check([&] () {
+                return PyObject_GetAttrString(_fig, "subplots_adjust");
+            });
+            if (!function)
+                return nullptr;
+            return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
+        });
+    }
+
     //! Close this figure
     bool close() {
         return detail::pycall([&] () {
