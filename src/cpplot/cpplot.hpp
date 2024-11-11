@@ -356,21 +356,9 @@ class Axis {
         })};
     }
 
-    //! Add a line plot to this axis
-    template<std::ranges::range X, std::ranges::range Y>
-    bool plot(X&& x, Y&& y) {
-        return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
-    }
-
     //! Add a line plot to this axis using the data point indices as x-axis
-    template<std::ranges::sized_range Y>
-    bool plot(Y&& y) {
-        return plot(std::forward<Y>(y), Kwargs<>{});
-    }
-
-    //! Add a line plot to this axis using the data point indices as x-axis + forward additional kwargs
     template<std::ranges::sized_range Y, typename... T>
-    bool plot(Y&& y, const Kwargs<T...>& kwargs) {
+    bool plot(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
         return plot(
             std::views::iota(std::size_t{0}, std::ranges::size(y)),
             std::forward<Y>(y),
@@ -378,9 +366,9 @@ class Axis {
         );
     }
 
-    //! Add a line plot to this axis with additional kwargs to be forwarded
+    //! Add a line plot to this axis
     template<std::ranges::range X, std::ranges::range Y, typename... T>
-    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
+    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
         return detail::pycall([&] () {
             PyObjectWrapper function = detail::check([&] () {
                 return PyObject_GetAttrString(_axis, "plot");
