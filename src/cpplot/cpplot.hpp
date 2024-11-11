@@ -27,6 +27,12 @@ namespace cpplot {
 #ifndef DOXYGEN
 namespace detail {
 
+    template<typename T>
+    concept CharacterRange = std::ranges::range<T> and (
+        std::is_same_v<std::ranges::range_value_t<T>, char> or
+        std::is_same_v<std::ranges::range_value_t<T>, wchar_t>
+    );
+
     class PythonWrapper {
         explicit PythonWrapper() {
             Py_Initialize();
@@ -122,6 +128,9 @@ namespace detail {
     template<typename... Ts> OverloadSet(Ts...) -> OverloadSet<Ts...>;
 
     template<typename T>
+    struct AlwaysFalse : std::false_type {};
+
+    template<typename T>
     PyObjectWrapper value_to_pyobject(const T& t) {
         return PyObjectWrapper{pycall([&] () {
             return OverloadSet{
@@ -129,7 +138,14 @@ namespace detail {
                 [&] (const bool& b) { return b ? Py_True : Py_False; },
                 [&] (const std::integral auto& i) { return PyLong_FromLong(static_cast<long>(i)); },
                 [&] (const std::unsigned_integral auto& i) { return PyLong_FromSize_t(static_cast<std::size_t>(i)); },
-                [&] (const std::string& s) { return PyBytes_FromString(s.c_str()); }
+                [&] <typename C, typename _T, typename A> (const std::basic_string<C, _T, A>& s) {
+                    if constexpr (std::is_same_v<C, char>)
+                        return PyUnicode_FromString(s.c_str());
+                    else if constexpr (std::is_same_v<C, wchar_t>)
+                        return PyUnicode_FromWideChar(s.c_str(), -1);
+                    else
+                        static_assert(AlwaysFalse<C>::value, "Unsupported character type.");
+                }
             }(t);
         })};
     }
@@ -152,7 +168,9 @@ namespace detail {
                 [] (const PyObject*) { return "O"; },
                 [] (const std::floating_point auto&) { return "f"; },
                 [] (const std::integral auto&) { return "i"; },
-                [] (const std::string&) { return "s"; }
+                [] (const char*) { return "s"; },
+                [] <typename... _T> (const std::basic_string<_T...>&) { return "s"; },
+                [] <std::ranges::range R> (const R&) requires(!CharacterRange<R>) { return "O"; }
             }(t);
         });
     }
@@ -308,8 +326,9 @@ namespace detail {
             return nullptr;
 
         const auto as_buildvalue_arg = OverloadSet{
+            [] (const auto& arg) { return arg; },
             [] (const std::string& s) { return s.c_str(); },
-            [] (const auto& arg) { return arg; }
+            [] <std::ranges::range R> (const R& r) requires(!CharacterRange<R>) { return as_pylist(r).release(); }
         };
 
         PyObject* result = nullptr;
@@ -490,6 +509,18 @@ class Axis {
         });
     }
 
+    //! Set the x-axis ticks
+    template<std::ranges::range X, typename... T>
+    bool set_x_ticks(X&& x, const Kwargs<T...>& kwargs = no_kwargs) {
+        return detail::pycall([&] () -> PyObjectWrapper {
+            PyObjectWrapper function = detail::check([&] () { return PyObject_GetAttrString(_axis, "set_xticks"); });
+            PyObjectWrapper py_args = detail::check([&] () { return PyTuple_New(1); });
+            PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+            PyTuple_SetItem(py_args.get(), 0, Py_BuildValue("O", detail::as_pylist(std::forward<X>(x)).release()));
+            return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
+        });
+    }
+
     //! Add a legend to this axis
     template<typename... T>
     bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
@@ -579,6 +610,30 @@ class Figure {
         if (_grid.count() > 1)
             throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
         return _axes[0].set_image(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_x_label(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_x_label(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_y_label(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_y_label(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_x_ticks(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_x_ticks(std::forward<Args>(args)...);
     }
 
     //! Convenience function for figures with a single axis (throws if multiple axes are defined)
