@@ -98,6 +98,7 @@ int main() {
             std::vector<std::string>{"d", "e", "f"},
             std::vector<int>{3, 4, 5}, with("label"_kw = "numbers2")
         );
+        fig.add_legend();
     };
 
     "plot_image"_test = [&] () {

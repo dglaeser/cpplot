@@ -390,8 +390,6 @@ class Axis {
             });
             if (function && args) {
                 PyObjectWrapper lines = detail::check([&] () { return PyObject_Call(function, args, detail::as_pyobject(kwargs)); });
-                if (kwargs.has_key("label"))
-                    PyObjectWrapper{detail::check([&] () { return PyObject_CallMethod(_axis, "legend", nullptr); })};
                 if (lines)
                     return true;
             }
@@ -504,6 +502,15 @@ class Axis {
         });
     }
 
+    //! Add a legend to this axis
+    template<typename... T>
+    bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
+        PyObjectWrapper py_args = detail::check([&] () { return PyTuple_New(0); });
+        PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+        PyObjectWrapper function = detail::check([&] () { return PyObject_GetAttrString(_axis, "legend"); });
+        return PyObjectWrapper{detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); })};
+    }
+
  private:
     friend class Figure;
     explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
@@ -592,6 +599,14 @@ class Figure {
         if (_grid.count() > 1)
             throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
         return _axes[0].add_colorbar(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... T>
+    bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].add_legend(kwargs);
     }
 
     //! Adjust the layout of how the axes are arranged (see the [Matplotlib docu] (https://matplotlib.org/stable/api/_as_gen/matplotlib.figure.Figure.subplots_adjust.html) for the supported kwargs)
