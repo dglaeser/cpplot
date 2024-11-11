@@ -88,6 +88,18 @@ int main() {
         ));
     };
 
+    "bar_plots_with_labels"_test = [&] () {
+        auto fig = figure();
+        fig.bar(
+            std::vector<std::string>{"a", "b", "c"},
+            std::vector<int>{1, 2, 3}, with("label"_kw = "numbers")
+        );
+        fig.bar(
+            std::vector<std::string>{"d", "e", "f"},
+            std::vector<int>{3, 4, 5}, with("label"_kw = "numbers2")
+        );
+    };
+
     "plot_image"_test = [&] () {
         set_style("default");
         auto fig = figure();

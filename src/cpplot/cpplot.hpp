@@ -239,7 +239,7 @@ class Kwargs {
     static_assert(std::conjunction_v<detail::IsKwarg<T>...>);
 
  public:
-    Kwargs(T&&... kwargs)
+    constexpr Kwargs(T&&... kwargs) noexcept
     : _kwargs{std::move(kwargs)...}
     {}
 
@@ -260,6 +260,8 @@ class Kwargs {
 
 template<typename... T>
 Kwargs(T&&...) -> Kwargs<std::remove_cvref_t<T>...>;
+
+inline constexpr Kwargs<> no_kwargs;
 
 //! Factory function to create a Kwargs object
 template<typename... T>
@@ -399,17 +401,18 @@ class Axis {
     }
 
      //! Add a bar plot to this axis using the data point indices on the x-axis
-    template<std::ranges::sized_range Y>
-    bool bar(Y&& y) {
+    template<std::ranges::sized_range Y, typename... T>
+    bool bar(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
         return bar(
             std::views::iota(std::size_t{0}, std::ranges::size(y)),
-            std::forward<Y>(y)
+            std::forward<Y>(y),
+            kwargs
         );
     }
 
     //! Add a bar plot to this axis
-    template<std::ranges::range X, std::ranges::range Y>
-    bool bar(X&& x, Y&& y) {
+    template<std::ranges::range X, std::ranges::range Y, typename... T>
+    bool bar(X&& x, Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
         return detail::pycall([&] () {
             PyObjectWrapper function = detail::check([&] () {
                 return PyObject_GetAttrString(_axis, "bar");
@@ -418,11 +421,14 @@ class Axis {
                 return Py_BuildValue("OO", detail::as_pylist(x).release(), detail::as_pylist(y).release());
             });
             if (function && args) {
-                PyObjectWrapper rects = detail::check([&] () { return PyObject_Call(function, args, nullptr); });
-                // if (kwargs.has_key("label"))
-                //     PyObjectWrapper{detail::check([&] () { return PyObject_CallMethod(_axis, "legend", nullptr); })};
-                if (rects)
-                    return true;
+                PyObjectWrapper rects = detail::check([&] () { return PyObject_Call(function, args, detail::as_pyobject(kwargs)); });
+                if (!rects)
+                    return false;
+                if (kwargs.has_key("label")) {
+                    PyObjectWrapper function_name = detail::check([&] () { return PyUnicode_FromString("bar_label"); });
+                    PyObjectWrapper{detail::check([&] () { return PyObject_CallMethodOneArg(_axis, function_name, rects); })};
+                }
+                return true;
             }
             PyErr_Print();
             return false;
