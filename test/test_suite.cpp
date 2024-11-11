@@ -77,6 +77,17 @@ int main() {
         ));
     };
 
+    "bar_plot"_test = [&] () {
+        expect(figure().bar(std::vector<int>{1, 2, 3}));
+    };
+
+    "bar_plot_with_x_axis"_test = [&] () {
+        expect(figure().bar(
+            std::vector<std::string>{"a", "b", "c"},
+            std::vector<int>{3, 2, 4}
+        ));
+    };
+
     "plot_image"_test = [&] () {
         set_style("default");
         auto fig = figure();

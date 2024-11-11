@@ -129,6 +129,7 @@ namespace detail {
                 [&] (const bool& b) { return b ? Py_True : Py_False; },
                 [&] (const std::integral auto& i) { return PyLong_FromLong(static_cast<long>(i)); },
                 [&] (const std::unsigned_integral auto& i) { return PyLong_FromSize_t(static_cast<std::size_t>(i)); },
+                [&] (const std::string& s) { return PyBytes_FromString(s.c_str()); }
             }(t);
         })};
     }
@@ -397,6 +398,37 @@ class Axis {
         });
     }
 
+     //! Add a bar plot to this axis using the data point indices on the x-axis
+    template<std::ranges::sized_range Y>
+    bool bar(Y&& y) {
+        return bar(
+            std::views::iota(std::size_t{0}, std::ranges::size(y)),
+            std::forward<Y>(y)
+        );
+    }
+
+    //! Add a bar plot to this axis
+    template<std::ranges::range X, std::ranges::range Y>
+    bool bar(X&& x, Y&& y) {
+        return detail::pycall([&] () {
+            PyObjectWrapper function = detail::check([&] () {
+                return PyObject_GetAttrString(_axis, "bar");
+            });
+            PyObjectWrapper args = detail::check([&] () {
+                return Py_BuildValue("OO", detail::as_pylist(x).release(), detail::as_pylist(y).release());
+            });
+            if (function && args) {
+                PyObjectWrapper rects = detail::check([&] () { return PyObject_Call(function, args, nullptr); });
+                // if (kwargs.has_key("label"))
+                //     PyObjectWrapper{detail::check([&] () { return PyObject_CallMethod(_axis, "legend", nullptr); })};
+                if (rects)
+                    return true;
+            }
+            PyErr_Print();
+            return false;
+        });
+    }
+
     //! Plot an image on this axie
     template<typename Image>  // constrain on image concept
     bool set_image(const Image& image) {
@@ -530,6 +562,14 @@ class Figure {
         if (_grid.count() > 1)
             throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its plot function.");
         return _axes[0].plot(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool bar(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its plot function.");
+        return _axes[0].bar(std::forward<Args>(args)...);
     }
 
     //! Convenience function for figures with a single axis (throws if multiple axes are defined)
