@@ -20,10 +20,12 @@ int main() {
     auto sine_default_x_axis = figure();
     sine_default_x_axis.plot(sine_values, with("label"_kw = "sine"));
     sine_default_x_axis.set_title("The sine function");
+    sine_default_x_axis.add_legend();
 
     // let's do the same, but use the actual x values on the x axis
     auto sine = figure();
     sine.plot(x_values, sine_values, with("label"_kw = "sin(x)"));
+    sine.add_legend();
 
     // let's plot the two below each other
     auto stacked = figure({.nrows = 2, .ncols = 1});

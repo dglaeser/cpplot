@@ -77,6 +77,38 @@ int main() {
         ));
     };
 
+    "bar_plot"_test = [&] () {
+        expect(figure().bar(std::vector<int>{1, 2, 3}));
+    };
+
+    "bar_plot_with_x_axis"_test = [&] () {
+        expect(figure().bar(
+            std::vector<std::string>{"a", "b", "c"},
+            std::vector<int>{3, 2, 4}
+        ));
+    };
+
+    "bar_plots_with_labels"_test = [&] () {
+        auto fig = figure();
+        fig.bar(
+            std::vector<double>{0, 3, 6},
+            std::vector<int>{1, 2, 3}, with("label"_kw = "numbers")
+        );
+        fig.bar(
+            std::vector<double>{1, 4, 7},
+            std::vector<int>{3, 4, 5}, with("label"_kw = "numbers2")
+        );
+        fig.add_legend();
+        fig.set_x_ticks(
+            std::vector<double>{0.5, 3.5, 6.5},
+            with("labels"_kw = std::vector<std::string>{"a", "b", "c"})
+        );
+        fig.set_y_ticks(
+            std::vector<double>{4.0},
+            with("labels"_kw = std::vector<std::string>{"M"})
+        );
+    };
+
     "plot_image"_test = [&] () {
         set_style("default");
         auto fig = figure();

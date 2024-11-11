@@ -27,6 +27,12 @@ namespace cpplot {
 #ifndef DOXYGEN
 namespace detail {
 
+    template<typename T>
+    concept CharacterRange = std::ranges::range<T> and (
+        std::is_same_v<std::ranges::range_value_t<T>, char> or
+        std::is_same_v<std::ranges::range_value_t<T>, wchar_t>
+    );
+
     class PythonWrapper {
         explicit PythonWrapper() {
             Py_Initialize();
@@ -122,6 +128,9 @@ namespace detail {
     template<typename... Ts> OverloadSet(Ts...) -> OverloadSet<Ts...>;
 
     template<typename T>
+    struct AlwaysFalse : std::false_type {};
+
+    template<typename T>
     PyObjectWrapper value_to_pyobject(const T& t) {
         return PyObjectWrapper{pycall([&] () {
             return OverloadSet{
@@ -129,6 +138,14 @@ namespace detail {
                 [&] (const bool& b) { return b ? Py_True : Py_False; },
                 [&] (const std::integral auto& i) { return PyLong_FromLong(static_cast<long>(i)); },
                 [&] (const std::unsigned_integral auto& i) { return PyLong_FromSize_t(static_cast<std::size_t>(i)); },
+                [&] <typename C, typename _T, typename A> (const std::basic_string<C, _T, A>& s) {
+                    if constexpr (std::is_same_v<C, char>)
+                        return PyUnicode_FromString(s.c_str());
+                    else if constexpr (std::is_same_v<C, wchar_t>)
+                        return PyUnicode_FromWideChar(s.c_str(), -1);
+                    else
+                        static_assert(AlwaysFalse<C>::value, "Unsupported character type.");
+                }
             }(t);
         })};
     }
@@ -151,7 +168,9 @@ namespace detail {
                 [] (const PyObject*) { return "O"; },
                 [] (const std::floating_point auto&) { return "f"; },
                 [] (const std::integral auto&) { return "i"; },
-                [] (const std::string&) { return "s"; }
+                [] (const char*) { return "s"; },
+                [] <typename... _T> (const std::basic_string<_T...>&) { return "s"; },
+                [] <std::ranges::range R> (const R&) requires(!CharacterRange<R>) { return "O"; }
             }(t);
         });
     }
@@ -238,7 +257,7 @@ class Kwargs {
     static_assert(std::conjunction_v<detail::IsKwarg<T>...>);
 
  public:
-    Kwargs(T&&... kwargs)
+    constexpr Kwargs(T&&... kwargs) noexcept
     : _kwargs{std::move(kwargs)...}
     {}
 
@@ -259,6 +278,8 @@ class Kwargs {
 
 template<typename... T>
 Kwargs(T&&...) -> Kwargs<std::remove_cvref_t<T>...>;
+
+inline constexpr Kwargs<> no_kwargs;
 
 //! Factory function to create a Kwargs object
 template<typename... T>
@@ -305,8 +326,9 @@ namespace detail {
             return nullptr;
 
         const auto as_buildvalue_arg = OverloadSet{
+            [] (const auto& arg) { return arg; },
             [] (const std::string& s) { return s.c_str(); },
-            [] (const auto& arg) { return arg; }
+            [] <std::ranges::range R> (const R& r) requires(!CharacterRange<R>) { return as_pylist(r).release(); }
         };
 
         PyObject* result = nullptr;
@@ -353,21 +375,9 @@ class Axis {
         })};
     }
 
-    //! Add a line plot to this axis
-    template<std::ranges::range X, std::ranges::range Y>
-    bool plot(X&& x, Y&& y) {
-        return plot(std::forward<X>(x), std::forward<Y>(y), Kwargs<>{});
-    }
-
     //! Add a line plot to this axis using the data point indices as x-axis
-    template<std::ranges::sized_range Y>
-    bool plot(Y&& y) {
-        return plot(std::forward<Y>(y), Kwargs<>{});
-    }
-
-    //! Add a line plot to this axis using the data point indices as x-axis + forward additional kwargs
     template<std::ranges::sized_range Y, typename... T>
-    bool plot(Y&& y, const Kwargs<T...>& kwargs) {
+    bool plot(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
         return plot(
             std::views::iota(std::size_t{0}, std::ranges::size(y)),
             std::forward<Y>(y),
@@ -375,9 +385,9 @@ class Axis {
         );
     }
 
-    //! Add a line plot to this axis with additional kwargs to be forwarded
+    //! Add a line plot to this axis
     template<std::ranges::range X, std::ranges::range Y, typename... T>
-    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs) {
+    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
         return detail::pycall([&] () {
             PyObjectWrapper function = detail::check([&] () {
                 return PyObject_GetAttrString(_axis, "plot");
@@ -387,10 +397,43 @@ class Axis {
             });
             if (function && args) {
                 PyObjectWrapper lines = detail::check([&] () { return PyObject_Call(function, args, detail::as_pyobject(kwargs)); });
-                if (kwargs.has_key("label"))
-                    PyObjectWrapper{detail::check([&] () { return PyObject_CallMethod(_axis, "legend", nullptr); })};
                 if (lines)
                     return true;
+            }
+            PyErr_Print();
+            return false;
+        });
+    }
+
+     //! Add a bar plot to this axis using the data point indices on the x-axis
+    template<std::ranges::sized_range Y, typename... T>
+    bool bar(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
+        return bar(
+            std::views::iota(std::size_t{0}, std::ranges::size(y)),
+            std::forward<Y>(y),
+            kwargs
+        );
+    }
+
+    //! Add a bar plot to this axis
+    template<std::ranges::range X, std::ranges::range Y, typename... T>
+    bool bar(X&& x, Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
+        return detail::pycall([&] () {
+            PyObjectWrapper function = detail::check([&] () {
+                return PyObject_GetAttrString(_axis, "bar");
+            });
+            PyObjectWrapper args = detail::check([&] () {
+                return Py_BuildValue("OO", detail::as_pylist(x).release(), detail::as_pylist(y).release());
+            });
+            if (function && args) {
+                PyObjectWrapper rects = detail::check([&] () { return PyObject_Call(function, args, detail::as_pyobject(kwargs)); });
+                if (!rects)
+                    return false;
+                if (kwargs.has_key("label")) {
+                    PyObjectWrapper function_name = detail::check([&] () { return PyUnicode_FromString("bar_label"); });
+                    PyObjectWrapper{detail::check([&] () { return PyObject_CallMethodOneArg(_axis, function_name, rects); })};
+                }
+                return true;
             }
             PyErr_Print();
             return false;
@@ -466,6 +509,39 @@ class Axis {
         });
     }
 
+    //! Set the x-axis ticks
+    template<std::ranges::range X, typename... T>
+    bool set_x_ticks(X&& x, const Kwargs<T...>& kwargs = no_kwargs) {
+        return detail::pycall([&] () -> PyObjectWrapper {
+            PyObjectWrapper function = detail::check([&] () { return PyObject_GetAttrString(_axis, "set_xticks"); });
+            PyObjectWrapper py_args = detail::check([&] () { return PyTuple_New(1); });
+            PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+            PyTuple_SetItem(py_args.get(), 0, Py_BuildValue("O", detail::as_pylist(std::forward<X>(x)).release()));
+            return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
+        });
+    }
+
+    //! Set the y-axis ticks
+    template<std::ranges::range Y, typename... T>
+    bool set_y_ticks(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
+        return detail::pycall([&] () -> PyObjectWrapper {
+            PyObjectWrapper function = detail::check([&] () { return PyObject_GetAttrString(_axis, "set_yticks"); });
+            PyObjectWrapper py_args = detail::check([&] () { return PyTuple_New(1); });
+            PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+            PyTuple_SetItem(py_args.get(), 0, Py_BuildValue("O", detail::as_pylist(std::forward<Y>(y)).release()));
+            return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
+        });
+    }
+
+    //! Add a legend to this axis
+    template<typename... T>
+    bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
+        PyObjectWrapper py_args = detail::check([&] () { return PyTuple_New(0); });
+        PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+        PyObjectWrapper function = detail::check([&] () { return PyObject_GetAttrString(_axis, "legend"); });
+        return PyObjectWrapper{detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); })};
+    }
+
  private:
     friend class Figure;
     explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
@@ -534,6 +610,14 @@ class Figure {
 
     //! Convenience function for figures with a single axis (throws if multiple axes are defined)
     template<typename... Args>
+    bool bar(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its plot function.");
+        return _axes[0].bar(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
     bool set_image(Args&&... args) {
         if (_grid.count() > 1)
             throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
@@ -542,10 +626,50 @@ class Figure {
 
     //! Convenience function for figures with a single axis (throws if multiple axes are defined)
     template<typename... Args>
+    bool set_x_label(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_x_label(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_y_label(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_y_label(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_x_ticks(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_x_ticks(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_y_ticks(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_y_ticks(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
     bool add_colorbar(Args&&... args) {
         if (_grid.count() > 1)
             throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
         return _axes[0].add_colorbar(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... T>
+    bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].add_legend(kwargs);
     }
 
     //! Adjust the layout of how the axes are arranged (see the [Matplotlib docu] (https://matplotlib.org/stable/api/_as_gen/matplotlib.figure.Figure.subplots_adjust.html) for the supported kwargs)
