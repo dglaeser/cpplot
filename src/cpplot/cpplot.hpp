@@ -521,6 +521,18 @@ class Axis {
         });
     }
 
+    //! Set the y-axis ticks
+    template<std::ranges::range Y, typename... T>
+    bool set_y_ticks(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
+        return detail::pycall([&] () -> PyObjectWrapper {
+            PyObjectWrapper function = detail::check([&] () { return PyObject_GetAttrString(_axis, "set_yticks"); });
+            PyObjectWrapper py_args = detail::check([&] () { return PyTuple_New(1); });
+            PyObjectWrapper py_kwargs = detail::as_pyobject(kwargs);
+            PyTuple_SetItem(py_args.get(), 0, Py_BuildValue("O", detail::as_pylist(std::forward<Y>(y)).release()));
+            return detail::check([&] () { return PyObject_Call(function, py_args, py_kwargs); });
+        });
+    }
+
     //! Add a legend to this axis
     template<typename... T>
     bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
@@ -634,6 +646,14 @@ class Figure {
         if (_grid.count() > 1)
             throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
         return _axes[0].set_x_ticks(std::forward<Args>(args)...);
+    }
+
+    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
+    template<typename... Args>
+    bool set_y_ticks(Args&&... args) {
+        if (_grid.count() > 1)
+            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
+        return _axes[0].set_y_ticks(std::forward<Args>(args)...);
     }
 
     //! Convenience function for figures with a single axis (throws if multiple axes are defined)

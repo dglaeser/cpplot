@@ -103,6 +103,10 @@ int main() {
             std::vector<double>{0.5, 3.5, 6.5},
             with("labels"_kw = std::vector<std::string>{"a", "b", "c"})
         );
+        fig.set_y_ticks(
+            std::vector<double>{4.0},
+            with("labels"_kw = std::vector<std::string>{"M"})
+        );
     };
 
     "plot_image"_test = [&] () {
