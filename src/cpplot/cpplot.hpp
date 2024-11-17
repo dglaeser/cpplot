@@ -33,21 +33,21 @@ namespace detail {
         std::is_same_v<std::ranges::range_value_t<T>, wchar_t>
     );
 
-    class PythonWrapper {
-        explicit PythonWrapper() {
+    class Python {
+        explicit Python() {
             Py_Initialize();
             if (!Py_IsInitialized())
                 throw std::runtime_error("Could not initialize Python.");
         };
 
      public:
-        ~PythonWrapper() {
+        ~Python() {
             if (Py_IsInitialized())
                 Py_Finalize();
         }
 
-        static const PythonWrapper& instance() {
-            static PythonWrapper wrapper{};
+        static const Python& instance() {
+            static Python wrapper{};
             return wrapper;
         }
 
@@ -61,7 +61,7 @@ namespace detail {
 
     template<std::invocable F>
     inline decltype(auto) pycall(const F& f) {
-        return PythonWrapper::instance()(f);
+        return Python::instance()(f);
     }
 
     template<std::invocable F> requires(std::is_same_v<std::invoke_result_t<F>, PyObject*>)
