@@ -1,6 +1,7 @@
 #include <numbers>
 #include <ranges>
 #include <cmath>
+#include <iostream>
 
 #include <cpplot/cpplot.hpp>
 

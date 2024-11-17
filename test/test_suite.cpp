@@ -15,11 +15,11 @@ int main() {
     set_style("ggplot");
 
     "fig_close"_test = [&] () {
-        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
+        expect(eq(cpplot::detail::PyPlot::instance().number_of_active_figures(), std::size_t{0}));
         auto fig = figure();
-        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{1}));
+        expect(eq(cpplot::detail::PyPlot::instance().number_of_active_figures(), std::size_t{1}));
         expect(fig.close());
-        expect(eq(cpplot::detail::MPLWrapper::instance().number_of_active_figures(), std::size_t{0}));
+        expect(eq(cpplot::detail::PyPlot::instance().number_of_active_figures(), std::size_t{0}));
     };
 
     "fig_title"_test = [] () {
