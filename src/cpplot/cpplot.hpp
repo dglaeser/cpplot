@@ -24,6 +24,62 @@
 
 namespace cpplot {
 
+namespace Traits {
+
+//! Customization point to get the size of an image type
+template<typename T>
+struct ImageSize;
+template<typename T>
+struct ImageSize<std::vector<std::vector<T>>> {
+    static std::array<std::size_t, 2> get(const std::vector<std::vector<T>>& data) {
+        const std::size_t y = data.size();
+        if (y == 0)
+            return {0, 0};
+        const std::size_t x = data[0].size();
+        assert(std::all_of(data.begin(), data.end(), [&] (const auto& row) { return row.size() == x; }));
+        return {y, x};
+    }
+};
+
+//! Customization point to get a value in an image
+template<typename T>
+struct ImageAccess;
+template<typename T>
+struct ImageAccess<std::vector<std::vector<T>>> {
+    static const T& at(const std::array<std::size_t, 2>& idx, const std::vector<std::vector<T>>& data) {
+        return data.at(idx[0]).at(idx[1]);
+    }
+};
+
+}  // namespace Traits
+
+
+#ifndef DOXYGEN
+namespace detail {
+
+    template<typename T, std::size_t s = sizeof(T)>
+    std::false_type is_incomplete(T*);
+    std::true_type is_incomplete(...);
+    template<typename T>
+    inline constexpr bool is_complete = !decltype(is_incomplete(std::declval<T*>()))::value;
+
+    template<typename T>
+    using ImageValueType = std::remove_cvref_t<decltype(Traits::ImageAccess<T>::at(std::array<std::size_t, 2>{}, std::declval<const T>()))>;
+
+}  // namespace detail
+#endif  // DOXYGEN
+
+template<typename T>
+concept Image
+= detail::is_complete<Traits::ImageSize<T>>
+and detail::is_complete<Traits::ImageAccess<T>>
+and requires(const T& t) {
+    { Traits::ImageSize<T>::get(t) } -> std::same_as<std::array<std::size_t, 2>>;
+    { Traits::ImageAccess<T>::at(std::array<std::size_t, 2>{}, t) };
+    std::floating_point<detail::ImageValueType<T>> or std::integral<detail::ImageValueType<T>>;
+};
+
+
 #ifndef DOXYGEN
 namespace detail {
 
@@ -112,12 +168,6 @@ namespace detail {
         }
     } pycall;
 
-    template<typename T, std::size_t s = sizeof(T)>
-    std::false_type is_incomplete(T*);
-    std::true_type is_incomplete(...);
-    template<typename T>
-    inline constexpr bool is_complete = !decltype(is_incomplete(std::declval<T*>()))::value;
-
     template<typename T>
     struct AsPyObject;
 
@@ -155,7 +205,7 @@ namespace detail {
         return tuple;
     }
 
-    template<std::ranges::range R>
+    template<std::ranges::range R> requires(!Image<R>)
     struct AsPyObject<R> {
         static PyObjectWrapper from(const R& r) {
             return pycall([&] () {
@@ -165,6 +215,26 @@ namespace detail {
                 });
                 return list;
             });
+        }
+    };
+
+    template<Image T>
+    struct AsPyObject<T> {
+        static PyObjectWrapper from(const T& image) {
+            const auto size = Traits::ImageSize<T>::get(image);
+            auto outer_list = pycall([&] () { return PyList_New(size[0]); });
+            if (!outer_list)
+                return nullptr;
+
+            // PyList_Set_Item "steals" a reference, so we don't have to decrement
+            for (std::size_t y = 0; y < size[0]; ++y) {
+                auto row = pycall([&] () { return PyList_New(size[1]); });
+                for (std::size_t x = 0; x < size[1]; ++x)
+                    pycall([&] () { PyList_SET_ITEM(row, x, as_pyobject(Traits::ImageAccess<T>::at({y, x}, image)).release()); });
+                PyList_SET_ITEM(outer_list.get(), y, row.release());
+            }
+
+            return outer_list;
         }
     };
 
@@ -282,49 +352,6 @@ constexpr auto with(T&&... args) {
 }
 
 
-namespace Traits {
-
-//! Customization point to get the size of an image type
-template<typename T>
-struct ImageSize;
-template<typename T>
-struct ImageSize<std::vector<std::vector<T>>> {
-    static std::array<std::size_t, 2> get(const std::vector<std::vector<T>>& data) {
-        const std::size_t y = data.size();
-        if (y == 0)
-            return {0, 0};
-        const std::size_t x = data[0].size();
-        assert(std::all_of(data.begin(), data.end(), [&] (const auto& row) { return row.size() == x; }));
-        return {y, x};
-    }
-};
-
-//! Customization point to get a value in an image
-template<typename T>
-struct ImageAccess;
-template<typename T>
-struct ImageAccess<std::vector<std::vector<T>>> {
-    static const T& at(const std::array<std::size_t, 2>& idx, const std::vector<std::vector<T>>& data) {
-        return data.at(idx[0]).at(idx[1]);
-    }
-};
-
-}  // namespace Traits
-
-
-template<typename T>
-concept Scalar = std::integral<T> or std::floating_point<T>;
-
-template<typename T>
-concept Image
-= detail::is_complete<Traits::ImageSize<T>>
-and detail::is_complete<Traits::ImageAccess<T>>
-and requires(const T& t) {
-    { Traits::ImageSize<T>::get(t) } -> std::same_as<std::array<std::size_t, 2>>;
-    { Traits::ImageAccess<T>::get(std::array<std::size_t, 2>{}, t) } -> Scalar;
-};
-
-
 #ifndef DOXYGEN
 namespace detail {
 
@@ -377,24 +404,7 @@ namespace detail {
         }
     };
 
-    template<Image T>
-    struct AsPyObject<T> {
-        static PyObjectWrapper get(const T& image) {
-            const auto size = Traits::ImageSize<T>::get(image);
-            auto outer_list = pycall([&] () { return PyList_New(size[0]); });
-            if (!outer_list)
-                return nullptr;
 
-            // PyList_Set_Item "steals" a reference, so we don't have to decrement
-            for (std::size_t y = 0; y < size[0]; ++y) {
-                auto row = pycall([&] () { return PyList_New(size[1]); });
-                for (std::size_t x = 0; x < size[1]; ++x)
-                    pycall([&] () { PyList_SET_ITEM( row, x, as_pyobject(Traits::ImageAccess<T>::at({y, x}, image))); });
-                PyList_SET_ITEM(outer_list.get(), y, row);
-            }
-            return outer_list;
-        }
-    };
 
     struct Args {
         template<typename... T>
@@ -472,8 +482,8 @@ class Axis {
     }
 
     //! Plot an image on this axis
-    template<typename Image>  // constrain on image concept
-    bool set_image(const Image& image) {
+    template<Image I>
+    bool set_image(const I& image) {
         _image = detail::invoke(_axis, "imshow", detail::Args::from(image));
         return static_cast<bool>(_image);
     }
