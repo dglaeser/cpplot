@@ -481,7 +481,7 @@ class Axis {
                 );
             });
             PyObjectWrapper function = check([&] () {
-                return PyObject_GetAttrString(_mpl, "colorbar");
+                return PyObject_GetAttrString(_pyplot, "colorbar");
             });
             if (!function || !kwargs)
                 return false;
@@ -544,14 +544,14 @@ class Axis {
 
  private:
     friend class Figure;
-    explicit Axis(PyObjectWrapper mpl, PyObjectWrapper axis)
-    : _mpl{std::move(mpl)}
+    explicit Axis(PyObjectWrapper plt, PyObjectWrapper axis)
+    : _pyplot{std::move(plt)}
     , _axis{std::move(axis)} {
-        assert(_mpl);
+        assert(_pyplot);
         assert(_axis);
     }
 
-    PyObjectWrapper _mpl;
+    PyObjectWrapper _pyplot;
     PyObjectWrapper _axis;
     std::optional<PyObjectWrapper> _image;
 };
@@ -711,7 +711,7 @@ class Figure {
     bool close() {
         return detail::pycall([&] () -> bool {
             return detail::PyObjectWrapper{detail::check([&] () {
-                return PyObject_CallMethod(_mpl, "close", "i", _id);
+                return PyObject_CallMethod(_pyplot, "close", "i", _id);
             })};
         });
     }
@@ -721,37 +721,37 @@ class Figure {
 
     // constructor for figures with a single axis
     explicit Figure(std::size_t id,
-                    detail::PyObjectWrapper mpl,
+                    detail::PyObjectWrapper plt,
                     detail::PyObjectWrapper fig,
                     detail::PyObjectWrapper axis)
     : _id{id}
     , _grid{1, 1}
-    , _mpl{mpl}
+    , _pyplot{plt}
     , _fig{fig} {
-        _axes.push_back(Axis{mpl, axis});
+        _axes.push_back(Axis{plt, axis});
     }
 
     // constructor for figures with a grid of axes
     explicit Figure(std::size_t id,
-                    detail::PyObjectWrapper mpl,
+                    detail::PyObjectWrapper plt,
                     detail::PyObjectWrapper fig,
                     std::vector<detail::PyObjectWrapper> axes,
                     std::size_t ny,
                     std::size_t nx)
     : _id{id}
     , _grid{ny, nx}
-    , _mpl{mpl}
+    , _pyplot{plt}
     , _fig{fig} {
         if (axes.size() != _grid.count())
             throw std::runtime_error("Number of axes does not match the given grid layout.");
         _axes.reserve(axes.size());
         for (std::size_t i = 0; i < axes.size(); ++i)
-            _axes.push_back(Axis{mpl, axes[i]});
+            _axes.push_back(Axis{plt, axes[i]});
     }
 
     std::size_t _id;
     Grid _grid;
-    detail::PyObjectWrapper _mpl;
+    detail::PyObjectWrapper _pyplot;
     detail::PyObjectWrapper _fig;
     std::vector<Axis> _axes;
     std::optional<detail::PyObjectWrapper> _image;
@@ -780,7 +780,7 @@ namespace detail {
 
             const std::size_t fig_id = _get_unused_fig_id();
             PyObjectWrapper fig_axis_tuple = pycall([&] () -> PyObject* {
-                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "subplots"); });
+                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_pyplot, "subplots"); });
                 if (!function) return nullptr;
                 PyObjectWrapper args = PyTuple_New(0);
                 PyObjectWrapper kwargs = Py_BuildValue("{s:i,s:i,s:i}", "num", fig_id, "nrows", ny, "ncols", nx);
@@ -797,7 +797,7 @@ namespace detail {
             });
 
             if (nx*ny == 1)  // axes is a single axis
-                return Figure{fig_id, _mpl, fig, axes};
+                return Figure{fig_id, _pyplot, fig, axes};
 
             std::vector<PyObjectWrapper> ax_vec;
             ax_vec.reserve(ny*nx);
@@ -820,19 +820,19 @@ namespace detail {
             });
             if (ax_vec.size() != nx*ny)
                 throw std::runtime_error("Could not create sub-figure axes");
-            return Figure{fig_id, _mpl, fig, ax_vec, ny, nx};
+            return Figure{fig_id, _pyplot, fig, ax_vec, ny, nx};
         }
 
         bool figure_exists(std::size_t id) const {
             return pycall([&] () {
-                PyObjectWrapper result = check([&] () { return PyObject_CallMethod(_mpl, "fignum_exists", "i", id); });
+                PyObjectWrapper result = check([&] () { return PyObject_CallMethod(_pyplot, "fignum_exists", "i", id); });
                 return result.get() == Py_True;
             });
         }
 
         std::size_t number_of_active_figures() const {
             return pycall([&] () {
-                PyObjectWrapper result = check([&] () { return PyObject_CallMethod(_mpl, "get_fignums", nullptr); });
+                PyObjectWrapper result = check([&] () { return PyObject_CallMethod(_pyplot, "get_fignums", nullptr); });
                 assert(PyList_Check(result));
                 return PyList_Size(result);
             });
@@ -840,7 +840,7 @@ namespace detail {
 
         void show_all(std::optional<bool> block) const {
             pycall([&] () {
-                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_mpl, "show"); });
+                PyObjectWrapper function = check([&] () { return PyObject_GetAttrString(_pyplot, "show"); });
                 if (!function)
                     return;
 
@@ -853,8 +853,8 @@ namespace detail {
 
         bool use_style(const std::string& name) {
             return pycall([&] () -> bool {
-                if (!_mpl) return false;
-                PyObjectWrapper style = check([&] () { return PyObject_GetAttrString(_mpl, "style"); });
+                if (!_pyplot) return false;
+                PyObjectWrapper style = check([&] () { return PyObject_GetAttrString(_pyplot, "style"); });
                 if (!style) return false;
                 PyObjectWrapper result = check([&] () { return PyObject_CallMethod(style, "use", "s", name.c_str()); });
                 return static_cast<bool>(result);
@@ -863,10 +863,10 @@ namespace detail {
 
      private:
         explicit MPLWrapper() {
-            _mpl = pycall([&] () {
+            _pyplot = pycall([&] () {
                 return PyImport_ImportModule("matplotlib.pyplot");
             });
-            if (!_mpl)
+            if (!_pyplot)
                 throw std::runtime_error("Could not import matplotlib.");
         }
 
@@ -877,7 +877,7 @@ namespace detail {
             return id;
         }
 
-        PyObjectWrapper _mpl{nullptr};
+        PyObjectWrapper _pyplot{nullptr};
     };
 
 }  // namespace detail
