@@ -397,81 +397,82 @@ class axis {
  public:
     //! Plot the given values against indices on the x-axis
     template<std::ranges::sized_range Y, typename... K>
-    void plot(Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+    pyobject plot(Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
         const auto x = std::views::iota(std::size_t{0}, std::ranges::size(y));
-        plot(x, std::forward<Y>(y), kwargs);
+        return plot(x, std::forward<Y>(y), kwargs);
     }
 
     //! Plot the given y-values against the given x-values
     template<std::ranges::range X, std::ranges::range Y, typename... K>
-    void plot(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
-        detail::pycall(_ax, "plot", args(std::forward<X>(x), std::forward<Y>(y)), kwargs);
+    pyobject plot(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+        return detail::pycall(_ax, "plot", args(std::forward<X>(x), std::forward<Y>(y)), kwargs);
     }
 
     //! Show the given image on this axis
     template<concepts::image I, typename... K>
-    void imshow(I&& img,
-                const py_kwargs<K...>& kwargs = no_kwargs,
-                const imshow_options& opts = {}) {
-                    // TODO: image_to_pyobject?
+    pyobject imshow(I&& img,
+                    const py_kwargs<K...>& kwargs = no_kwargs,
+                    const imshow_options& opts = {}) {
         auto image = detail::pycall(_ax, "imshow", args(img), kwargs);
         if (image && opts.add_colorbar)
             detail::pycall(detail::plt{}.pyplot, "colorbar", no_args, cpplot::kwargs(
                 kw("mappable") = image,
                 kw("ax") = _ax
             ));
+        return image;
     }
 
     //! Add a bar plot to this axis using the data point indices on the x-axis
     template<std::ranges::sized_range Y, typename... K>
-    void bar(Y&& y,
-             const py_kwargs<K...>& kwargs = no_kwargs,
-             const bar_options& opts = {}) {
+    pyobject bar(Y&& y,
+                 const py_kwargs<K...>& kwargs = no_kwargs,
+                 const bar_options& opts = {}) {
         const auto x = std::views::iota(std::size_t{0}, std::ranges::size(y));
-        bar(x, std::forward<Y>(y), kwargs, opts);
+        return bar(x, std::forward<Y>(y), kwargs, opts);
     }
 
     //! Add a bar plot to this axis
     template<std::ranges::range X, std::ranges::range Y, typename... K>
-    void bar(X&& x, Y&& y,
-             const py_kwargs<K...>& kwargs = no_kwargs,
-             const bar_options& opts = {}) {
+    pyobject bar(X&& x, Y&& y,
+                 const py_kwargs<K...>& kwargs = no_kwargs,
+                 const bar_options& opts = {}) {
         auto rectangles = detail::pycall(_ax, "bar", args(x, y), kwargs);
         if (rectangles && opts.add_bar_labels)
             detail::pycall(_ax, "bar_label", args(rectangles));
+        return rectangles;
     }
 
     //! Add a title to this axis
-    void set_title(const std::string& title) {
-        detail::pycall(_ax, "set_title", args(title));
+    pyobject set_title(const std::string& title) {
+       return detail::pycall(_ax, "set_title", args(title));
     }
 
     //! Set the x-axis ticks
     template<std::ranges::range X, typename... K>
-    void set_x_ticks(X&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
-        detail::pycall(_ax, "set_xticks", args(ticks), kwargs);
+    pyobject set_x_ticks(X&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+        return detail::pycall(_ax, "set_xticks", args(ticks), kwargs);
     }
 
     //! Set the y-axis ticks
     template<std::ranges::range Y, typename... K>
-    void set_y_ticks(Y&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
-        detail::pycall(_ax, "set_yticks", args(ticks), kwargs);
+    pyobject set_y_ticks(Y&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+        return detail::pycall(_ax, "set_yticks", args(ticks), kwargs);
     }
 
     //! Set the x-axis label
-    void set_x_label(const std::string& label) {
-        detail::pycall(_ax, "set_xlabel", args(label), py_kwargs<>{});
+    pyobject set_x_label(const std::string& label) {
+         return detail::pycall(_ax, "set_xlabel", args(label), py_kwargs<>{});
     }
 
     //! Set the y-axis label
-    void set_y_label(const std::string& label) {
-        detail::pycall(_ax, "set_ylabel", args(label), py_kwargs<>{});
+    pyobject set_y_label(const std::string& label) {
+         return detail::pycall(_ax, "set_ylabel", args(label), py_kwargs<>{});
     }
 
     //! Add a legend to this axis (invokes pyplot.Axes.legend(kwargs))
     template<typename... K>
-    void add_legend(const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
-        detail::pycall(_ax, "legend", py_args<>{}, kwargs);
+    pyobject add_legend(const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+         return detail::pycall(_ax, "legend", py_args<>{}, kwargs);
     }
 
     //! Get the python representation of this axis
@@ -571,8 +572,8 @@ class figure : private detail::plt {
     }
 
     //! Add a title to this figure
-    void set_title(const std::string& title) {
-        detail::pycall(_fig, "suptitle", args(title));
+    pyobject set_title(const std::string& title) {
+        return detail::pycall(_fig, "suptitle", args(title));
     }
 
     //! Save this figure to the file with the given name
