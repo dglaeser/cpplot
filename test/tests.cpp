@@ -120,7 +120,7 @@ int main() {
             figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
-                kwargs::from(kw("label") = "some_label")
+                kwargs(kw("label") = "some_label")
             );
         }));
     };
@@ -129,7 +129,7 @@ int main() {
         expect(!raises_pyerror([] () {
             figure{}.axis().plot(
                 std::vector{3.0, 4.0, 5.0},
-                kwargs::from("label"_kw = "some_label")
+                kwargs("label"_kw = "some_label")
             );
         }));
     };
@@ -139,7 +139,7 @@ int main() {
             figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
-                kwargs::from("label"_kw = std::string{"some_label"})
+                kwargs("label"_kw = std::string{"some_label"})
             );
         }));
     };
@@ -149,7 +149,7 @@ int main() {
             figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
-                kwargs::from("color"_kw = "blue")
+                kwargs("color"_kw = "blue")
             );
         }));
     };
@@ -183,20 +183,20 @@ int main() {
             auto fig = figure{};
             fig.axis().bar(
                 std::vector<double>{0, 3, 6},
-                std::vector<int>{1, 2, 3}, kwargs::from("label"_kw = "numbers")
+                std::vector<int>{1, 2, 3}, kwargs("label"_kw = "numbers")
             );
             fig.axis().bar(
                 std::vector<double>{1, 4, 7},
-                std::vector<int>{3, 4, 5}, kwargs::from("label"_kw = "numbers2")
+                std::vector<int>{3, 4, 5}, kwargs("label"_kw = "numbers2")
             );
             fig.axis().add_legend();
             fig.axis().set_x_ticks(
                 std::vector<double>{0.5, 3.5, 6.5},
-                kwargs::from("labels"_kw = std::vector<std::string>{"a", "b", "c"})
+                kwargs("labels"_kw = std::vector<std::string>{"a", "b", "c"})
             );
             fig.axis().set_y_ticks(
                 std::vector<double>{4.0},
-                kwargs::from("labels"_kw = std::vector<std::string>{"M"})
+                kwargs("labels"_kw = std::vector<std::string>{"M"})
             );
         }));
     };
@@ -249,7 +249,7 @@ int main() {
             fig_matrix.axis_at({0, 1}).plot(
                 std::vector{1, 2, 3},
                 std::vector{4, 5, 6},
-                kwargs::from("label"_kw = "some_label")
+                kwargs("label"_kw = "some_label")
             );
             fig_matrix.axis_at({0, 1}).set_x_label("x values");
             fig_matrix.axis_at({0, 1}).set_y_label("y values");
