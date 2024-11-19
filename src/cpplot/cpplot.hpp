@@ -192,6 +192,11 @@ class pyobject {
         return pyobject{obj};
     }
 
+    static pyobject none() {
+        detail::pycontext{};
+        return pyobject{Py_None};
+    }
+
     PyObject* get() const noexcept { return _obj; }
     PyObject* release() noexcept { PyObject* tmp = _obj; _obj = nullptr; return tmp; }
     operator bool() const noexcept { return static_cast<bool>(_obj); }
