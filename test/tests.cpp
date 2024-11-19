@@ -238,21 +238,21 @@ int main() {
     "figure_matrix_single_row"_test = [&] () {
         expect(!raises_pyerror([] () {
             figure fig_matrix{{1, 2}};
-            fig_matrix.axis({0, 0}).imshow(std::vector<std::vector<double>>{
+            fig_matrix.axis_at({0, 0}).imshow(std::vector<std::vector<double>>{
                 {1, 2, 3},
                 {4, 5, 6},
                 {7, 8, 9}
             });
-            fig_matrix.axis({0, 0}).set_x_label("x values");
-            fig_matrix.axis({0, 0}).set_y_label("y values");
+            fig_matrix.axis_at({0, 0}).set_x_label("x values");
+            fig_matrix.axis_at({0, 0}).set_y_label("y values");
 
-            fig_matrix.axis({0, 1}).plot(
+            fig_matrix.axis_at({0, 1}).plot(
                 std::vector{1, 2, 3},
                 std::vector{4, 5, 6},
                 kwargs::from("label"_kw = "some_label")
             );
-            fig_matrix.axis({0, 1}).set_x_label("x values");
-            fig_matrix.axis({0, 1}).set_y_label("y values");
+            fig_matrix.axis_at({0, 1}).set_x_label("x values");
+            fig_matrix.axis_at({0, 1}).set_y_label("y values");
         }));
     };
 
