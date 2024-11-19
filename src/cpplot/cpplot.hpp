@@ -31,6 +31,8 @@ namespace traits {
 template<typename T> struct image_size;
 //! Customization point to get a value in an image
 template<typename T> struct image_access;
+//! Customization point to get a coordinate value in a point
+template<typename T, std::size_t direction> struct point_access;
 //! Customization point for converting types into python objects
 template<typename T> struct to_pyobject;
 
@@ -67,9 +69,18 @@ template<typename T>
 concept scalar = std::floating_point<std::remove_cvref_t<T>> or std::integral<std::remove_cvref_t<T>>;
 
 template<typename T>
-concept range_2d = std::ranges::range<T>
-    and std::ranges::range<std::ranges::range_value_t<T>>
-    and not std::ranges::range<std::ranges::range_value_t<std::ranges::range_value_t<T>>>;
+concept range_1d = std::ranges::range<T> and not std::ranges::range<std::ranges::range_value_t<T>>;
+
+template<typename T>
+concept range_2d = std::ranges::range<T> and range_1d<std::ranges::range_value_t<T>>;
+
+template<typename T>
+concept point_2d = detail::is_complete<traits::point_access<T, 0>>
+    and detail::is_complete<traits::point_access<T, 1>>
+    and requires(const T& t) {
+        { traits::point_access<T, 0>::get(t) } -> scalar;
+        { traits::point_access<T, 1>::get(t) } -> scalar;
+    };
 
 template<typename T>
 concept as_image = detail::is_complete<traits::image_size<T>>
@@ -442,6 +453,16 @@ class axis {
         return rectangles;
     }
 
+    //! Draw a filled polyon onto this axis
+    template<std::ranges::forward_range R, typename... K>
+        requires(concepts::point_2d<std::ranges::range_value_t<R>>)
+    pyobject draw_polygon(R&& corners, const py_kwargs<K...>& kwargs = no_kwargs) {
+        return detail::pycall(_ax, "fill", args(
+            corners | std::views::transform([] <typename P> (const P& point) { return traits::point_access<P, 0>::get(point); }),
+            corners | std::views::transform([] <typename P> (const P& point) { return traits::point_access<P, 1>::get(point); })
+        ), kwargs);
+    }
+
     //! Add a title to this axis
     pyobject set_title(const std::string& title) {
        return detail::pycall(_ax, "set_title", args(title));
@@ -677,6 +698,17 @@ struct to_pyobject<T> {
             PyList_SetItem(py_image, row, py_row);
         }
         return py_image;
+    }
+};
+
+// specialize the point trait for ranges with static size (e.g. std::array)
+template<concepts::range_1d R, std::size_t dimension> requires(R{}.size() == 2)
+struct point_access<R, dimension> {
+    static_assert(dimension < 2);
+    static decltype(auto) get(const R& range) {
+        auto it = std::ranges::begin(range);
+        std::ranges::advance(it, dimension);
+        return *it;
     }
 };
 

@@ -40,6 +40,10 @@ bool raises_pyerror(F&& f) {
     return has_error;
 }
 
+struct test_point {
+    double x;
+    double y;
+};
 
 struct test_image {
     static constexpr std::size_t rows = 2;
@@ -63,6 +67,13 @@ template<>
 struct image_access<test_image> {
     static constexpr auto at(const grid_location& loc, const test_image& img) {
         return img.values.at(loc.row).at(loc.col);
+    }
+};
+
+template<std::size_t dimension>
+struct point_access<test_point, dimension> {
+    static auto get(const test_point& point) {
+        return dimension == 0 ? point.x : point.y;
     }
 };
 
@@ -206,7 +217,23 @@ int main() {
 
     "plot_image"_test = [&] () {
         expect(!raises_pyerror([] () {
-           expect(figure{}.axis().imshow(test_image{}));
+            expect(figure{}.axis().imshow(test_image{}));
+        }));
+    };
+
+    "draw_polygon_from_std_array"_test = [] () {
+        expect(!raises_pyerror([] () {
+            figure f;
+            f.axis().imshow(std::vector<std::vector<int>>{{0, 1}, {2, 3}});
+            expect(f.axis().draw_polygon(std::vector<std::array<int, 2>>{{0, 0}, {1, 0}, {1, 1}, {0, 1}}));
+        }));
+    };
+
+    "draw_polygon_from_custom_point"_test = [] () {
+        expect(!raises_pyerror([] () {
+            figure f;
+            f.axis().imshow(std::vector<std::vector<int>>{{0, 1}, {2, 3}});
+            expect(f.axis().draw_polygon(std::vector<test_point>{{0, 0}, {1, 0}, {1, 1}, {0, 1}}));
         }));
     };
 
