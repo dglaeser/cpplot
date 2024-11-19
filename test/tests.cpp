@@ -34,12 +34,9 @@ std::string as_string(const cpplot::pyobject& obj) {
 template<std::invocable F>
 bool raises_pyerror(F&& f) {
     bool has_error = false;
-    bool print = cpplot::detail::pyerr_observers.print_error;
-    cpplot::detail::pyerr_observers.print_error = false;
-    cpplot::detail::pyerr_observers.push_back([&] () { has_error = true; });
+    auto original_observer = cpplot::pyerror_observer.swap_with([&] () { has_error = true; PyErr_Clear(); });
     f();
-    cpplot::detail::pyerr_observers.pop_back();
-    cpplot::detail::pyerr_observers.print_error = print;
+    cpplot::pyerror_observer.swap_with(original_observer);
     return has_error;
 }
 

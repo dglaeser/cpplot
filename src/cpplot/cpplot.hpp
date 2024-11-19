@@ -111,32 +111,32 @@ inline constexpr py_args<> no_args{};
 inline constexpr py_kwargs<> no_kwargs{};
 
 
+//! Global error observer to customize behaviour when python errors are raised
+static struct {
+    using observer = std::function<void()>;
+
+    //! Called by the library when an error occurs
+    void notify() {
+        _observer();
+    }
+
+    //! Replace the underlying observer by the given one
+    observer swap_with(observer other) {
+        observer tmp = _observer;
+        _observer = other;
+        return tmp;
+    }
+
+ private:
+    observer _observer = [] () {
+        PyErr_Print();
+        throw std::runtime_error("Python error occurred");
+    };
+} pyerror_observer;
+
+
 #ifndef DOXYGEN
 namespace detail {
-
-    // Global error observer to be able to inject error observers in the tests
-    struct {
-        void push_back(std::function<void()> f) {
-            _observers.push_back(f);
-        }
-
-        void pop_back() {
-            _observers.pop_back();
-        }
-
-        void notify() {
-            if (print_error)
-                PyErr_Print();
-            std::ranges::for_each(_observers, [] (const auto& f) { f(); });
-            PyErr_Clear();
-        }
-
-        bool print_error = true;
-
-     private:
-        std::vector<std::function<void()>> _observers;
-    } pyerr_observers;
-
     class python {
         explicit python() {
             Py_Initialize();
@@ -188,7 +188,7 @@ class pyobject {
 
     static pyobject from(PyObject* obj) {
         if (!obj)
-            detail::pyerr_observers.notify();
+            pyerror_observer.notify();
         return pyobject{obj};
     }
 
