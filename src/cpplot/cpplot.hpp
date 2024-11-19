@@ -37,6 +37,18 @@ template<typename T> struct to_pyobject;
 }  // namespace traits
 
 
+//! Data structure to define a 2d grid
+struct grid {
+    std::size_t rows;
+    std::size_t cols;
+};
+
+//! Data structure for accessing entries on a 2d grid
+struct grid_location {
+    std::size_t row;
+    std::size_t col;
+};
+
 #ifndef DOXYGEN
 namespace detail {
 
@@ -63,8 +75,8 @@ template<typename T>
 concept as_image = detail::is_complete<traits::image_size<T>>
     and detail::is_complete<traits::image_access<T>>
     and requires(const T& t) {
-        { traits::image_size<T>::get(t) } -> std::same_as<std::array<std::size_t, 2>>;
-        { traits::image_access<T>::at(std::array<std::size_t, 2>{}, t) } -> scalar;
+        { traits::image_size<T>::get(t) } -> std::convertible_to<grid>;
+        { traits::image_access<T>::at(grid_location{0, 0}, t) } -> scalar;
     };
 
 template<typename T>
@@ -480,18 +492,6 @@ class axis {
     pyobject _ax;
 };
 
-//! Data structure to define a grid of axes
-struct grid {
-    std::size_t rows;
-    std::size_t cols;
-};
-
-//! Data structure for accessing an axis in a grid
-struct grid_location {
-    std::size_t row;
-    std::size_t col;
-};
-
 //! Represents a pyplot style to use for a figure
 struct style {
     std::string_view name;
@@ -666,12 +666,12 @@ template<concepts::as_image T>
 struct to_pyobject<T> {
     static PyObject* from(const T& img) {
         detail::pycontext{};
-        const auto size = image_size<T>::get(img);
-        auto py_image = PyList_New(size[0]);
-        for (std::size_t row = 0; row < size[0]; ++row) {
-            auto py_row = PyList_New(size[1]);
-            for (std::size_t col = 0; col < size[1]; ++col)
-                PyList_SetItem(py_row, col, detail::to_pyobject(image_access<T>::at({row, col}, img)).release());
+        const auto grid = image_size<T>::get(img);
+        auto py_image = PyList_New(grid.rows);
+        for (std::size_t row = 0; row < grid.rows; ++row) {
+            auto py_row = PyList_New(grid.cols);
+            for (std::size_t col = 0; col < grid.cols; ++col)
+                PyList_SetItem(py_row, col, detail::to_pyobject(image_access<T>::at({.row = row, .col = col}, img)).release());
             PyList_SetItem(py_image, row, py_row);
         }
         return py_image;

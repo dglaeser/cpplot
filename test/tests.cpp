@@ -57,15 +57,15 @@ namespace cpplot::traits {
 
 template<>
 struct image_size<test_image> {
-    static constexpr std::array<std::size_t, 2> get(const test_image& img) {
-        return {img.rows, img.cols};
+    static constexpr grid get(const test_image& img) {
+        return {.rows = img.rows, .cols = img.cols};
     }
 };
 
 template<>
 struct image_access<test_image> {
-    static constexpr auto at(const std::array<std::size_t, 2>& idx, const test_image& img) {
-        return img.values.at(idx[0]).at(idx[1]);
+    static constexpr auto at(const grid_location& loc, const test_image& img) {
+        return img.values.at(loc.row).at(loc.col);
     }
 };
 
