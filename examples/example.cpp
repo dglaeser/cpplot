@@ -45,7 +45,7 @@ int main() {
             : style{.name = "ggplot"};
     }};
     // Images can be 2d ranges, which are supported out-of-the-box. If you have a custom image type, you may
-    // specialze the `image_size` and `image_access` traits defined in the namespace `cpplot::traits`
+    // specialize the `image_size` and `image_access` traits defined in the namespace `cpplot::traits`
     const std::vector<std::vector<double>> image{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
     // ... with imshow, we can directly add a colorbar to the axis, and via the kwargs we can set the color map
     image_and_plot.axis_at({0, 0}).imshow(image, no_kwargs, {.add_colorbar = true});
