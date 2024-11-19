@@ -51,6 +51,24 @@ int main() {
     image_and_plot.axis_at({0, 0}).imshow(image, no_kwargs, {.add_colorbar = true});
     image_and_plot.axis_at({0, 1}).plot(x_values, sine_values);
 
+    // If you need some feature that is not exposed via the libary, you can also let it invoke python functions
+    image_and_plot.py_invoke("text", no_args, kwargs::from(
+        "x"_kw = 0.5,
+        "y"_kw = 0.5,
+        "s"_kw = "this is text"
+    ));  // ... adds text over the figure
+    image_and_plot.axis_at({0, 1}).py_invoke(
+        "fill",
+        args::from(
+            std::vector{0.0, 1.0, 1.0, 0.0},  // x-coordinates
+            std::vector{0.0, 0.0, 1.0, 1.0}   // y-coordinates
+        ),
+        kwargs::from(
+            "edgecolor"_kw = "k",
+            "fill"_kw = false
+        )
+    );  // ... draws a polygon, as specified by the coordinates, over this axis
+
     // let's have a look at all the figures we created
     // show();
 
