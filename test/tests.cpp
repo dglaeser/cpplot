@@ -85,8 +85,10 @@ int main() {
     "fig_title"_test = [] () {
         figure f;
         f.set_title("some_title");
-        auto title = f.py_invoke("get_suptitle");
-        expect(eq(as_string(title), std::string{"some_title"}));
+        expect(eq(
+            as_string(f.py_invoke("get_suptitle")),
+            std::string{"some_title"}
+        ));
     };
 
     "plot_values_default_x_axis"_test = [&] () {
@@ -167,7 +169,7 @@ int main() {
         }));
     };
 
-    "bar_plot_with_x_axis_mismatch"_test = [&] () {
+    "bar_plot_with_x_axis_mismatch__should_raise_pyerror"_test = [&] () {
         expect(raises_pyerror([] () {
             figure{}.axis().bar(
                 std::vector<std::string>{"a", "b"},
@@ -176,7 +178,7 @@ int main() {
         }));
     };
 
-    "bar_plots_with_labels"_test = [&] () {
+    "bar_plots_with_custom_labels_and_ticks"_test = [&] () {
         expect(!raises_pyerror([] () {
             auto fig = figure{};
             fig.axis().bar(
@@ -217,7 +219,11 @@ int main() {
     "axis_title"_test = [&] () {
         expect(!raises_pyerror([] () {
             auto fig = figure();
-            fig.set_title("axis");
+            fig.axis().set_title("axis_title");
+            expect(eq(
+                as_string(fig.axis().py_invoke("get_title")),
+                std::string{"axis_title"}
+            ));
         }));
     };
 
