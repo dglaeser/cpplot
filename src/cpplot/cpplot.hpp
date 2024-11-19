@@ -339,7 +339,7 @@ inline constexpr auto kwargs(T&&... t) {
     return py_kwargs{std::forward_as_tuple(std::forward<T>(t)...)};
 }
 
-//! Helper function to create keyword arguments
+//! Helper function to create a keyword argument
 inline kwarg<none> kw(std::string name) noexcept {
     return {std::move(name)};
 }
