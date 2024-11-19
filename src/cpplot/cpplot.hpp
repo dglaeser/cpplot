@@ -1,13 +1,13 @@
 #include <stdexcept>
 #include <type_traits>
-#include <algorithm>
 #include <functional>
 #include <utility>
-#include <optional>
-#include <vector>
-#include <string_view>
+#include <algorithm>
 #include <concepts>
 #include <ranges>
+
+#include <string_view>
+#include <vector>
 
 
 #ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
@@ -174,7 +174,6 @@ class pyobject {
         return *this;
     }
 
-    //! Create a pyobject from a raw PyObject*, invoking PyErr_Print if it is null
     static pyobject from(PyObject* obj) {
         if (!obj)
             detail::pyerr_observers.notify();
@@ -649,25 +648,6 @@ class figure : private detail::plt {
 
 // default trait implementations
 namespace traits {
-
-template<typename T>
-struct image_size<std::vector<std::vector<T>>> {
-    static std::array<std::size_t, 2> get(const std::vector<std::vector<T>>& data) {
-        const std::size_t y = data.size();
-        if (y == 0)
-            return {0, 0};
-        const std::size_t x = data[0].size();
-        assert(std::all_of(data.begin(), data.end(), [&] (const auto& row) { return row.size() == x; }));
-        return {y, x};
-    }
-};
-
-template<typename T>
-struct image_access<std::vector<std::vector<T>>> {
-    static const T& at(const std::array<std::size_t, 2>& idx, const std::vector<std::vector<T>>& data) {
-        return data.at(idx[0]).at(idx[1]);
-    }
-};
 
 template<std::ranges::range R>
 struct to_pyobject<R> {
