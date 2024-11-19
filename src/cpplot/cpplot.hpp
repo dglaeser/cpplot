@@ -1,6 +1,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <algorithm>
+#include <functional>
 #include <utility>
 #include <optional>
 #include <vector>
@@ -27,31 +28,11 @@ namespace cpplot {
 namespace traits {
 
 //! Customization point to get the size of an image type
-template<typename T>
-struct ImageSize;
-
+template<typename T> struct image_size;
 //! Customization point to get a value in an image
-template<typename T>
-struct ImageAccess;
-
-template<typename T>
-struct ImageSize<std::vector<std::vector<T>>> {
-    static std::array<std::size_t, 2> get(const std::vector<std::vector<T>>& data) {
-        const std::size_t y = data.size();
-        if (y == 0)
-            return {0, 0};
-        const std::size_t x = data[0].size();
-        assert(std::all_of(data.begin(), data.end(), [&] (const auto& row) { return row.size() == x; }));
-        return {y, x};
-    }
-};
-
-template<typename T>
-struct ImageAccess<std::vector<std::vector<T>>> {
-    static const T& at(const std::array<std::size_t, 2>& idx, const std::vector<std::vector<T>>& data) {
-        return data.at(idx[0]).at(idx[1]);
-    }
-};
+template<typename T> struct image_access;
+//! Customization point for converting types into python objects
+template<typename T> struct to_pyobject;
 
 }  // namespace traits
 
@@ -66,125 +47,153 @@ namespace detail {
     inline constexpr bool is_complete = !decltype(is_incomplete(std::declval<T*>()))::value;
 
     template<typename T>
-    using ImageValueType = std::remove_cvref_t<decltype(traits::ImageAccess<T>::at(std::array<std::size_t, 2>{}, std::declval<const T>()))>;
+    using image_value_t = std::remove_cvref_t<decltype(traits::image_access<T>::at(std::array<std::size_t, 2>{}, std::declval<const T>()))>;
 
 }  // namespace detail
 #endif  // DOXYGEN
 
+namespace concepts {
+
 template<typename T>
-concept Image
-= detail::is_complete<traits::ImageSize<T>>
-and detail::is_complete<traits::ImageAccess<T>>
-and requires(const T& t) {
-    { traits::ImageSize<T>::get(t) } -> std::same_as<std::array<std::size_t, 2>>;
-    { traits::ImageAccess<T>::at(std::array<std::size_t, 2>{}, t) };
-    std::floating_point<detail::ImageValueType<T>> or std::integral<detail::ImageValueType<T>>;
-};
+concept image = detail::is_complete<traits::image_size<T>>
+    and detail::is_complete<traits::image_access<T>>
+    and requires(const T& t) {
+        { traits::image_size<T>::get(t) } -> std::same_as<std::array<std::size_t, 2>>;
+        { traits::image_access<T>::at(std::array<std::size_t, 2>{}, t) };
+        std::floating_point<detail::image_value_t<T>> or std::integral<detail::image_value_t<T>>;
+    };
+
+template<typename T>
+concept to_pyobject = detail::is_complete<traits::to_pyobject<T>>
+    and requires(const T& t) {
+        { traits::to_pyobject<T>::from(t) } -> std::convertible_to<PyObject*>;
+    };
+
+template<typename T>
+concept kwarg = requires(const T& t) {
+        { t.name } -> std::convertible_to<std::string>;
+        { t.value };
+    };
+
+}  // namespace concepts
+
+//! Data structure to collect arguments to be forwarded to python
+template<typename... T>
+struct py_args { std::tuple<T...> values; };
+
+//! Data structure to collect keyword arguments to be forwarded to python
+template<concepts::kwarg... K>
+struct py_kwargs { std::tuple<K...> values; };
+
+//! Instance of an empty args data structure
+inline constexpr py_args<> no_args{};
+
+//! Instance of an empty kwargs data structure
+inline constexpr py_kwargs<> no_kwargs{};
 
 
 #ifndef DOXYGEN
 namespace detail {
 
-    class Python {
-        explicit Python() {
+    // Global error observer to be able to inject error observers in the tests
+    struct {
+        void push_back(std::function<void()> f) {
+            _observers.push_back(f);
+        }
+
+        void pop_back() {
+            _observers.pop_back();
+        }
+
+        void notify() {
+            if (print_error)
+                PyErr_Print();
+            std::ranges::for_each(_observers, [] (const auto& f) { f(); });
+            PyErr_Clear();
+        }
+
+        bool print_error = true;
+
+     private:
+        std::vector<std::function<void()>> _observers;
+    } pyerr_observers;
+
+    class python {
+        explicit python() {
             Py_Initialize();
             if (!Py_IsInitialized())
                 throw std::runtime_error("Could not initialize Python.");
         };
 
      public:
-        ~Python() {
+        python(const python&) = delete;
+        ~python() {
             if (Py_IsInitialized())
                 Py_Finalize();
         }
 
-        static const Python& instance() {
-            static Python wrapper{};
-            return wrapper;
-        }
-
-        template<typename F>
-        decltype(auto) operator()(F&& f) const {
-            if (!Py_IsInitialized())
-                throw std::runtime_error("Python is not initialized.");
-            return f();
+        static const python& instance() {
+            static python py{};
+            return py;
         }
     };
 
-    class PyObjectWrapper {
-        void swap_pyobjects(PyObject*& a, PyObject*& b) {
-            PyObject* c = a;
-            a = b;
-            b = c;
-        }
-
-    public:
-        ~PyObjectWrapper() {
-            if (_p)
-                Python::instance()([&] () { Py_DECREF(_p); });
-        }
-
-        PyObjectWrapper() = default;
-        PyObjectWrapper(PyObject* p) : _p{p} {}
-        PyObjectWrapper(const PyObjectWrapper& other) : PyObjectWrapper{Py_XNewRef(other._p)} {}
-        PyObjectWrapper(PyObjectWrapper&& other) : PyObjectWrapper{nullptr} { swap_pyobjects(_p, other._p); }
-
-        PyObjectWrapper& operator=(const PyObjectWrapper& other) {
-            *this = PyObjectWrapper{other};
-            return *this;
-        }
-
-        PyObjectWrapper& operator=(PyObjectWrapper&& other) {
-            swap_pyobjects(_p, other._p);
-            return *this;
-        }
-
-        PyObject* release() {
-            PyObject* tmp = _p;
-            _p = nullptr;
-            return tmp;
-        }
-
-        PyObject* get() { return _p; }
-        PyObject* get() const { return _p; }
-
-        explicit operator PyObject*() const { return _p; }
-        operator bool() const { return static_cast<bool>(_p); }
-
-    private:
-        PyObject* _p{nullptr};
+    struct pycontext {
+        pycontext() { python::instance(); }
     };
 
-    inline constexpr struct {
-        template<std::invocable F> requires(std::is_same_v<std::invoke_result_t<F>, PyObject*>)
-        PyObjectWrapper operator()(F&& f) const {
-            PyObject* obj = Python::instance()(f);
-            if (!obj)
-                PyErr_Print();
-            return {obj};
-        }
+}  // namespace detail
+#endif  // DOXYGEN
 
-        template<std::invocable F> requires(!std::is_same_v<std::invoke_result_t<F>, PyObject*>)
-        decltype(auto) operator()(F&& f) const {
-            return Python::instance()(f);
-        }
-    } pycall;
+//! Wrapper around a PyObject*, i.e. the python object representation
+class pyobject {
+ public:
+    ~pyobject() { if (_obj) Py_XDECREF(_obj); }
 
-    template<typename T>
-    struct AsPyObject;
+    explicit pyobject(PyObject* obj) : _obj{obj} {}
+    pyobject(const pyobject& other) : pyobject{Py_XNewRef(other._obj)} {}
+    pyobject(pyobject&& other) : pyobject{other.release()} {}
+    pyobject() = default;
 
-    template<typename T>
-    concept ConvertibleToPyObject = is_complete<AsPyObject<T>> and requires(const T& t) {
-        { AsPyObject<T>::from(t) } -> std::same_as<PyObjectWrapper>;
-    };
+    pyobject& operator=(const pyobject& other) {
+        pyobject{release()};
+        _obj = other._obj;
+        Py_XINCREF(_obj);
+        return *this;
+    }
+
+    pyobject& operator=(pyobject&& other) {
+        std::swap(_obj, other._obj);
+        return *this;
+    }
+
+    //! Create a pyobject from a raw PyObject*, invoking PyErr_Print if it is null
+    static pyobject from(PyObject* obj) {
+        if (!obj)
+            detail::pyerr_observers.notify();
+        return pyobject{obj};
+    }
+
+    PyObject* get() const noexcept { return _obj; }
+    PyObject* release() noexcept { PyObject* tmp = _obj; _obj = nullptr; return tmp; }
+    operator bool() const noexcept { return static_cast<bool>(_obj); }
+
+ private:
+    PyObject* _obj{nullptr};
+    detail::pycontext _context;
+};
+
+
+#ifndef DOXYGEN
+namespace detail {
 
     template<typename... Ts>
-    struct OverloadSet : Ts... { using Ts::operator()...; };
-    template<typename... Ts> OverloadSet(Ts...) -> OverloadSet<Ts...>;
+    struct overloads : Ts... { using Ts::operator()...; };
+    template<typename... Ts> overloads(Ts...) -> overloads<Ts...>;
 
     template<typename T>
-    PyObjectWrapper as_pyobject(const T& t) {
-        return OverloadSet{
+    pyobject to_pyobject(const T& t) {
+        return pyobject::from(overloads{
             [] (bool b) { return b ? Py_True : Py_False; },
             [] (std::integral auto i) { return PyLong_FromLong(static_cast<long>(i)); },
             [] (std::unsigned_integral auto i) { return PyLong_FromSize_t(static_cast<std::size_t>(i)); },
@@ -192,661 +201,479 @@ namespace detail {
             [] (const char* s) { return PyUnicode_FromString(s); },
             [] (const std::string& s) { return PyUnicode_FromString(s.c_str()); },
             [] (const std::wstring& s) { return PyUnicode_FromWideChar(s.data(), s.size()); },
-            [] (const PyObjectWrapper& p) { return p; },
-            [] <ConvertibleToPyObject O> (const O& o) { return AsPyObject<O>::from(o); }
-        }(t);
+            [] (const pyobject& p) { return pyobject{p}.release(); },
+            [] <concepts::to_pyobject O> (const O& o) { return traits::to_pyobject<O>::from(o); }
+        }(t));
     }
 
     template<typename... T>
-    PyObjectWrapper as_pytuple(T&&... t) {
-        auto tuple = pycall([&] () { return PyTuple_New(sizeof...(T)); });
+    pyobject to_pytuple(T&&... t) {
+        pycontext{};
+        auto tuple = pyobject::from(PyTuple_New(sizeof...(T)));
         const auto push = [&] <std::size_t... is> (std::index_sequence<is...>) {
-            (..., PyTuple_SetItem(tuple.get(), is, as_pyobject(t).release()));
+            (..., PyTuple_SetItem(tuple.get(), is, to_pyobject(t).release()));
         };
         push(std::index_sequence_for<T...>{});
         return tuple;
     }
 
-    template<std::ranges::range R> requires(!Image<R>)
-    struct AsPyObject<R> {
-        static PyObjectWrapper from(const R& r) {
-            return pycall([&] () {
-                auto list = PyList_New(std::size(r));
-                std::ranges::for_each(r, [&, i=0] <typename V> (const V& value) mutable {
-                    PyList_SetItem(list, i++, as_pyobject(value).release());
-                });
-                return list;
-            });
-        }
-    };
+    template<typename F, typename... O, concepts::kwarg K, concepts::kwarg... Ks>
+    constexpr decltype(auto) invoke_interleaved(F&& f, std::tuple<O...>&& interleaved, const K& kwarg, Ks&&... kwargs) {
+        auto extended = std::tuple_cat(std::move(interleaved), std::tuple{kwarg.name.c_str(), to_pyobject(kwarg.value).release()});
+        if constexpr (sizeof...(Ks) == 0)
+            return std::apply(f, std::move(extended));
+        else
+            return invoke_interleaved(std::forward<F>(f), std::move(extended), std::forward<Ks>(kwargs)...);
+    }
 
-    template<Image T>
-    struct AsPyObject<T> {
-        static PyObjectWrapper from(const T& image) {
-            const auto size = traits::ImageSize<T>::get(image);
-            auto outer_list = pycall([&] () { return PyList_New(size[0]); });
-            if (!outer_list)
-                return nullptr;
+    template<concepts::kwarg... K> requires(sizeof...(K) == 0)
+    pyobject to_pydict(K&&... kwargs) {
+        return pyobject{nullptr};
+    }
 
-            // PyList_Set_Item "steals" a reference, so we don't have to decrement
-            for (std::size_t y = 0; y < size[0]; ++y) {
-                auto row = pycall([&] () { return PyList_New(size[1]); });
-                for (std::size_t x = 0; x < size[1]; ++x)
-                    pycall([&] () { PyList_SET_ITEM(row, x, as_pyobject(traits::ImageAccess<T>::at({y, x}, image)).release()); });
-                PyList_SET_ITEM(outer_list.get(), y, row.release());
-            }
+    template<concepts::kwarg... K> requires(sizeof...(K) > 0)
+    pyobject to_pydict(K&&... kwargs) {
+        std::string format = "{";
+        for ([[maybe_unused]] std::size_t i = 0; i < sizeof...(K); ++i)
+            format += "s:O,";
+        format.back() = '}';
 
-            return outer_list;
+        pycontext{};
+        auto dict = invoke_interleaved([&] (const auto&... interleaved) {
+            return pyobject::from(Py_BuildValue(format.c_str(), interleaved...));
+        }, std::tuple{}, kwargs...);
+
+        if (!dict)
+            throw std::runtime_error("Conversion to python dictionary failed.");
+        return dict;
+    }
+
+    template<typename... A, concepts::kwarg... K>
+    pyobject pycall(const pyobject& obj,
+                    const std::string& function,
+                    const py_args<A...>& args = py_args<>{},
+                    const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+        auto f = pyobject::from(PyObject_GetAttrString(obj.get(), function.c_str()));
+        auto pyargs = std::apply([&] (const auto&... arg) { return to_pytuple(arg...); }, args.values);
+        auto pykwargs = std::apply([&] (const auto&... kwarg) { return to_pydict(kwarg...); }, kwargs.values);
+        if (!f || !pyargs)
+           return pyobject{nullptr};
+        return pyobject::from(PyObject_Call(f.get(), pyargs.get(), pykwargs.get()));
+    }
+
+    struct plt {
+        pyobject pyplot;
+
+        plt() : pyplot{} {
+            pyplot = pyobject::from(PyImport_ImportModule("matplotlib.pyplot"));
+            if (!pyplot)
+                throw std::runtime_error("Could not import matplotlib.pyplot.");
         }
     };
 
 }  // namespace detail
 #endif  // DOXYGEN
 
+//! Type to represent the absence of a value
+struct none {};
 
 //! Data structure to represent a keyword argument
-template<typename Value>
-class Kwarg {
- public:
-    using ValueType = std::remove_cvref_t<Value>;
+template<typename V>
+struct kwarg {
+    std::string name;
+    V value;
 
-    Kwarg(const Kwarg&) = delete;
-    Kwarg(Kwarg&&) = default;
-
-    template<typename V>
-    explicit constexpr Kwarg(std::string name, V&& value) noexcept
-    : _name{std::move(name)}
-    , _value{std::forward<V>(value)} {
-        static_assert(std::is_same_v<std::remove_cvref_t<Value>, std::remove_cvref_t<V>>);
-    }
-
-    const std::string& key() const { return _name; }
-    const ValueType& value() const { return _value; }
-
- private:
-    std::string _name;
-    Value _value;
+    template<typename _V> requires(std::is_same_v<std::remove_cvref_t<V>, std::remove_cvref_t<_V>>)
+    explicit constexpr kwarg(std::string n, _V&& val) noexcept
+    : name{std::move(n)}
+    , value{std::forward<_V>(val)}
+    {}
 };
 
 template<typename V>
-Kwarg(std::string, V&&) -> Kwarg<std::conditional_t<std::is_lvalue_reference_v<V>, V, std::remove_cvref_t<V>>>;
+kwarg(std::string, V&&) -> kwarg<std::conditional_t<std::is_lvalue_reference_v<V>, V, std::remove_cvref_t<V>>>;
 
-//! Helper class to create keyword arguments
-class KwargFactory {
- public:
-    explicit KwargFactory(std::string name)
-    : _name{std::move(name)}
-    {}
+//! A named keyword argument with no value specified yet
+template<>
+struct kwarg<none> {
+    std::string name;
 
-    template<typename T>
-    auto operator=(T&& value) && {
-        return Kwarg<T>{std::move(_name), std::forward<T>(value)};
+    template<typename V>
+    constexpr auto operator=(V&& value) && noexcept {
+        return cpplot::kwarg{std::move(name), std::forward<V>(value)};
     }
+};
 
- private:
-    std::string _name;
+//! Factory to create arguments passed to python functions
+struct args {
+    template<typename... T>
+    static constexpr auto from(T&&... t) noexcept {
+        return py_args{std::forward_as_tuple(std::forward<T>(t)...)};
+    }
+};
+
+//! Factory to create keyword arguments
+struct kwargs {
+    template<concepts::kwarg... T>
+    static constexpr auto from(T&&... t) noexcept {
+        return py_kwargs{std::forward_as_tuple(std::forward<T>(t)...)};
+    }
 };
 
 //! Helper function to create keyword arguments
-inline KwargFactory kw(std::string name) noexcept {
-    return KwargFactory{std::move(name)};
+inline kwarg<none> kw(std::string name) noexcept {
+    return {std::move(name)};
 }
-
 
 namespace literals {
 
 //! Create a keyword argument from a string literal
-KwargFactory operator ""_kw(const char* chars, size_t size) {
+kwarg<none> operator ""_kw(const char* chars, size_t size) noexcept {
     std::string n;
     n.resize(size);
     std::copy_n(chars, size, n.begin());
-    return KwargFactory{n};
+    return {std::move(n)};
 }
 
 }  // namespace literals
 
-
-#ifndef DOXYGEN
-namespace detail {
-
-    template<typename T>
-    struct IsKwarg : std::false_type {};
-    template<typename V>
-    struct IsKwarg<Kwarg<V>> : std::true_type {};
-
-}  // namespace detail
-#endif  // DOXYGEN
-
-//! Data structure to represent a set of keyword arguments
-template<typename... T>
-class Kwargs {
-    static_assert(std::conjunction_v<detail::IsKwarg<T>...>);
-
- public:
-    constexpr Kwargs(T&&... kwargs) noexcept
-    : _kwargs{std::move(kwargs)...}
-    {}
-
-    bool has_key(const std::string& key) const {
-        return std::apply([&] <typename... _T> (_T&&... kwarg) {
-            return (... || (kwarg.key() == key));
-        }, _kwargs);
-    }
-
-    template<typename Action>
-    void apply(Action&& a) const {
-        std::apply(a, _kwargs);
-    }
-
- private:
-    std::tuple<T...> _kwargs;
-};
-
-template<typename... T>
-Kwargs(T&&...) -> Kwargs<std::remove_cvref_t<T>...>;
-
-inline constexpr Kwargs<> no_kwargs;
-
-//! Factory function to create a Kwargs object. Allows to write `f(arg, with("kwarg"_kw = 1.0))`
-template<typename... T>
-constexpr auto with(T&&... args) {
-    return Kwargs{std::forward<T>(args)...};
+//! Invoke a function on the given python object (may be used for non-exposed pyplot features)
+template<typename... A, typename... K>
+pyobject py_invoke(const pyobject& obj,
+                   const std::string& function,
+                   const py_args<A...>& args = no_args,
+                   const py_kwargs<K...>& kwargs = no_kwargs) {
+    auto result = detail::pycall(obj, function, args, kwargs);
+    if (!result)
+        throw std::runtime_error("Python function invocation unsuccessful.");
+    return result;
 }
 
+//! Return the `matplotlib.pyplot` module
+pyobject pyplot() {
+    return detail::plt{}.pyplot;
+}
 
-#ifndef DOXYGEN
-namespace detail {
+//! Show all currently active figures
+void show() {
+    detail::plt plt{};
+    detail::pycall(plt.pyplot, "show");
+}
 
-    template<typename... T>
-    struct AsPyObject<Kwargs<T...>> {
-     public:
-        static PyObjectWrapper from(const Kwargs<T...>&) requires(sizeof...(T) == 0) {
-            if constexpr (sizeof...(T) == 0)
-                return nullptr;
-        }
+//! Options for `axis.imshow`
+struct imshow_options {
+    bool add_colorbar = false;
+};
 
-        static PyObjectWrapper from(const Kwargs<T...>& kwargs) requires(sizeof...(T) > 0) {
-            PyObject* result = nullptr;
-            kwargs.apply([&] <typename... KW> (const KW&... kwarg) {
-                std::string format = "{";
-                for ([[maybe_unused]] std::size_t i = 0; i < sizeof...(T); ++i)
-                    format += "s:O,";
-                format.back() = '}';
+//! Options for `axis.bar`
+struct bar_options {
+    bool add_bar_labels = false;
+};
 
-                const auto as_buildvalue_arg = OverloadSet{
-                    [] (const std::string& key) { return key.c_str(); },
-                    [] (const PyObjectWrapper& o) { return o.get(); }
-                };
+//! forward declaration
+class figure;
 
-                result = std::apply([&] (const auto&... interleaved) {
-                    return pycall([&] () { return Py_BuildValue(format.c_str(), as_buildvalue_arg(interleaved)...); }).release();
-                }, _make_interleaved(kwarg...));
-            });
-
-            if (!result)
-                throw std::runtime_error("Conversion of Kwargs to PyObject failed.");
-            return result;
-        }
-
-     private:
-        template<typename... O, typename KW, typename... KWs>
-        static constexpr auto _make_interleaved_impl(std::tuple<O...>&& out, const KW& kwarg, KWs&&... kwargs) {
-            if constexpr (sizeof...(KWs) == 0)
-                return std::tuple_cat(std::move(out), std::tuple{kwarg.key(), as_pyobject(kwarg.value())});
-            else
-                return _make_interleaved_impl(
-                    std::tuple_cat(std::move(out), std::tuple{kwarg.key(), as_pyobject(kwarg.value())}),
-                    std::forward<KWs>(kwargs)...
-                );
-        }
-
-        template<typename... KWs>
-        static constexpr auto _make_interleaved(KWs&&... kwargs) {
-            return _make_interleaved_impl(std::tuple{}, std::forward<KWs>(kwargs)...);
-        }
-    };
-
-
-
-    struct Args {
-        template<typename... T>
-        static auto from(T&&... t) { return std::forward_as_tuple(std::forward<T>(t)...); }
-    };
-
-    inline constexpr std::tuple<> no_args;
-
-    template<typename... A, typename... KW>
-    PyObjectWrapper invoke(const PyObjectWrapper obj,
-                           const std::string& function_name,
-                           const std::tuple<A...>& args = no_args,
-                           const Kwargs<KW...>& kwargs = no_kwargs) {
-        auto f = pycall([&] () { return PyObject_GetAttrString(obj.get(), std::string{function_name}.c_str()); });
-        auto pyargs = std::apply([&] <typename... T> (const T&... arg) { return as_pytuple(arg...); }, args);
-        auto pykwargs = as_pyobject(kwargs);
-        if (!f || !pyargs)
-           return nullptr;
-        return pycall([&] () { return PyObject_Call(f.get(), pyargs.get(), pykwargs.get()); });
-    }
-
-    // forward declarations
-    class PyPlot;
-
-}  // namespace detail
-#endif  // DOXYGEN
-
-// forward declaration
-class Figure;
-
-//! Class to represent an axis for plotting lines, images, histograms, etc..
-class Axis {
+//! Wrapper around a matplotlib.pyplot.Axes
+class axis {
  public:
-    //! Add a title to this axis
-    bool set_title(const std::string& title) {
-        return detail::invoke(_axis, "set_title", detail::Args::from(title));
+    //! Plot the given values against indices on the x-axis
+    template<std::ranges::sized_range Y, typename... K>
+    void plot(Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+        const auto x = std::views::iota(std::size_t{0}, std::ranges::size(y));
+        plot(x, std::forward<Y>(y), kwargs);
     }
 
-    //! Add a line plot to this axis using the data point indices as x-axis
-    template<std::ranges::sized_range Y, typename... T>
-    bool plot(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
-        return plot(
-            std::views::iota(std::size_t{0}, std::ranges::size(y)),
-            std::forward<Y>(y),
-            kwargs
-        );
+    //! Plot the given y-values against the given x-values
+    template<std::ranges::range X, std::ranges::range Y, typename... K>
+    void plot(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+        detail::pycall(_ax, "plot", args::from(std::forward<X>(x), std::forward<Y>(y)), kwargs);
     }
 
-    //! Add a line plot to this axis
-    template<std::ranges::range X, std::ranges::range Y, typename... T>
-    bool plot(X&& x, Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
-        return detail::invoke(_axis, "plot", detail::Args::from(x, y), kwargs);
+    //! Show the given image on this axis
+    template<concepts::image I, typename... K>
+    void imshow(I&& img,
+                const py_kwargs<K...>& kwargs = no_kwargs,
+                const imshow_options& opts = {}) {
+                    // TODO: image_to_pyobject?
+        auto image = detail::pycall(_ax, "imshow", args::from(img), kwargs);
+        if (image && opts.add_colorbar)
+            detail::pycall(detail::plt{}.pyplot, "colorbar", no_args, kwargs::from(
+                kw("mappable") = image,
+                kw("ax") = _ax
+            ));
     }
 
-     //! Add a bar plot to this axis using the data point indices on the x-axis
-    template<std::ranges::sized_range Y, typename... T>
-    bool bar(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
-        return bar(
-            std::views::iota(std::size_t{0}, std::ranges::size(y)),
-            std::forward<Y>(y),
-            kwargs
-        );
+    //! Add a bar plot to this axis using the data point indices on the x-axis
+    template<std::ranges::sized_range Y, typename... K>
+    void bar(Y&& y,
+             const py_kwargs<K...>& kwargs = no_kwargs,
+             const bar_options& opts = {}) {
+        const auto x = std::views::iota(std::size_t{0}, std::ranges::size(y));
+        bar(x, std::forward<Y>(y), kwargs, opts);
     }
 
     //! Add a bar plot to this axis
-    template<std::ranges::range X, std::ranges::range Y, typename... T>
-    bool bar(X&& x, Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
-        detail::PyObjectWrapper rectangles = detail::invoke(_axis, "bar", detail::Args::from(x, y), kwargs);
-        if (!rectangles)
-            return false;
-        if (kwargs.has_key("label"))
-            if (!detail::invoke(_axis, "bar_label", detail::Args::from(rectangles)))
-                return false;
-        return true;
+    template<std::ranges::range X, std::ranges::range Y, typename... K>
+    void bar(X&& x, Y&& y,
+             const py_kwargs<K...>& kwargs = no_kwargs,
+             const bar_options& opts = {}) {
+        auto rectangles = detail::pycall(_ax, "bar", args::from(x, y), kwargs);
+        if (rectangles && opts.add_bar_labels)
+            detail::pycall(_ax, "bar_label", args::from(rectangles));
     }
 
-    //! Plot an image on this axis
-    template<Image I>
-    bool set_image(const I& image) {
-        _image = detail::invoke(_axis, "imshow", detail::Args::from(image));
-        return static_cast<bool>(_image);
-    }
-
-    //! Add a colorbar to a previously added image (throws if no image had been set)
-    bool add_colorbar() {
-        if (!_image.has_value())
-            throw std::runtime_error("Cannot add colorbar; no image has been set");
-
-        using namespace literals;
-        return detail::invoke(_pyplot, "colorbar", detail::no_args, with(
-            "mappable"_kw = *_image,
-            "ax"_kw = _axis
-        ));
-    }
-
-    //! Set the label to be displayed on the x axis
-    bool set_x_label(const std::string& label) {
-        return detail::invoke(_axis, "set_xlabel", detail::Args::from(label));
-    }
-
-    //! Set the label to be displayed on the y axis
-    bool set_y_label(const std::string& label) {
-        return detail::invoke(_axis, "set_ylabel", detail::Args::from(label));
+    //! Add a title to this axis
+    void set_title(const std::string& title) {
+        detail::pycall(_ax, "set_title", args::from(title));
     }
 
     //! Set the x-axis ticks
-    template<std::ranges::range X, typename... T>
-    bool set_x_ticks(X&& x, const Kwargs<T...>& kwargs = no_kwargs) {
-        return detail::invoke(_axis, "set_xticks", detail::Args::from(x), kwargs);
+    template<std::ranges::range X, typename... K>
+    void set_x_ticks(X&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+        detail::pycall(_ax, "set_xticks", args::from(ticks), kwargs);
     }
 
     //! Set the y-axis ticks
-    template<std::ranges::range Y, typename... T>
-    bool set_y_ticks(Y&& y, const Kwargs<T...>& kwargs = no_kwargs) {
-        return detail::invoke(_axis, "set_yticks", detail::Args::from(y), kwargs);
+    template<std::ranges::range Y, typename... K>
+    void set_y_ticks(Y&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+        detail::pycall(_ax, "set_yticks", args::from(ticks), kwargs);
     }
 
-    //! Add a legend to this axis
-    template<typename... T>
-    bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
-        return detail::invoke(_axis, "legend", detail::no_args, kwargs);
+    //! Set the x-axis label
+    void set_x_label(const std::string& label) {
+        detail::pycall(_ax, "set_xlabel", args::from(label), py_kwargs<>{});
+    }
+
+    //! Set the y-axis label
+    void set_y_label(const std::string& label) {
+        detail::pycall(_ax, "set_ylabel", args::from(label), py_kwargs<>{});
+    }
+
+    //! Add a legend to this axis (invokes pyplot.Axes.legend(kwargs))
+    template<typename... K>
+    void add_legend(const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+        detail::pycall(_ax, "legend", py_args<>{}, kwargs);
+    }
+
+    //! Get the python representation of this axis
+    pyobject get_pyobject() const {
+        return _ax;
+    }
+
+    //! Invoke a python function on the underlying axis
+    template<typename... A, typename... K>
+    pyobject py_invoke(const std::string& function,
+                       const py_args<A...>& args = no_args,
+                       const py_kwargs<K...>& kwargs = no_kwargs) {
+        return cpplot::py_invoke(_ax, function, args, kwargs);
     }
 
  private:
-    friend class Figure;
-    using PyObjectWrapper = detail::PyObjectWrapper;
-
-    explicit Axis(PyObjectWrapper plt, PyObjectWrapper axis)
-    : _pyplot{std::move(plt)}
-    , _axis{std::move(axis)} {
-        assert(_pyplot);
-        assert(_axis);
-    }
-
-    PyObjectWrapper _pyplot;
-    PyObjectWrapper _axis;
-    std::optional<PyObjectWrapper> _image;
+    friend class figure;
+    axis(pyobject ax) : _ax{ax} {}
+    pyobject _ax;
 };
 
+//! Data structure to define a grid of axes
+struct grid {
+    std::size_t rows;
+    std::size_t cols;
+};
 
-//! Class to represent a figure, i.e. a canvas containing one or more axes
-class Figure {
-    struct Grid {
-        std::size_t ny;
-        std::size_t nx;
+//! Data structure for accessing an axis in a grid
+struct grid_location {
+    std::size_t row;
+    std::size_t col;
+};
 
-        std::size_t count() const {
-            return ny*nx;
-        }
-    };
+//! Represents a pyplot style to use for a figure
+struct style {
+    std::string_view name;
 
+    constexpr bool operator==(const style& other) const noexcept {
+        return name == other.name;
+    }
+};
+
+//! default style
+inline constexpr style default_style{.name = "default"};
+
+//! Wrapper around a matplotlib.pyplot.Figure
+class figure : private detail::plt {
  public:
-    struct AxisLocation {
-        std::size_t row;
-        std::size_t col;
-    };
+    ~figure() { close(); }
 
-    ~Figure() { close(); }
-
-    //! Return the number of axis rows
-    std::size_t ny() const {
-        return _grid.ny;
+    //! Create a figure with a single axis using the given style
+    figure(const style& style = default_style)
+    : _id{_get_unused_id()}
+    , _grid{1, 1} {
+        _set_style(style);
+        auto [fig, axes] = _make_fig_and_axes(kwargs::from(kw("num") = _id));
+        _fig = fig;
+        _axes.push_back(cpplot::axis{axes});
+        _set_style(default_style);
     }
 
-    //! Return the number of axis columns
-    std::size_t nx() const {
-        return _grid.nx;
+    //! Create a figure with a grid of axes and one style for all axes
+    figure(grid grid, const style& style = default_style)
+    : _id{_get_unused_id()}
+    , _grid{std::move(grid)} {
+        _set_style(style);
+        _fig = detail::pycall(this->pyplot, "figure", no_args, kwargs::from(kw("num") = _id));
+        std::size_t flat_index = 1;
+        for (std::size_t row = 0; row < _grid.rows; ++row) {
+            for (std::size_t col = 0; col < _grid.cols; ++col)
+                _axes.push_back(cpplot::axis{
+                    detail::pycall(_fig, "add_subplot", args::from(_grid.rows, _grid.cols, flat_index++))
+                });
+        }
+        _set_style(default_style);
+    }
+
+    //! Create a figure with a grid of axes and use an individual style on each axis
+    template<std::invocable<const grid_location&> F>
+        requires(std::convertible_to<std::invoke_result_t<F, const grid_location&>, style>)
+    figure(grid grid, F&& style_callback)
+    : _id{_get_unused_id()}
+    , _grid{std::move(grid)} {
+        _fig = detail::pycall(this->pyplot, "figure", no_args, kwargs::from(kw("num") = _id));
+        std::size_t flat_index = 1;
+        for (std::size_t row = 0; row < _grid.rows; ++row) {
+            for (std::size_t col = 0; col < _grid.cols; ++col) {
+                _set_style(style_callback(grid_location{.row = row, .col = col}));
+                _axes.push_back(cpplot::axis{
+                    detail::pycall(_fig, "add_subplot", args::from(_grid.rows, _grid.cols, flat_index++))
+                });
+            }
+        }
+        _set_style(default_style);
+    }
+
+    //! Return the underlying axis (for figures with a single axis)
+    cpplot::axis axis() const {
+        if (_axes.size() > 1)
+            throw std::runtime_error("Figure contains more than one axis. Call axis(const grid_location&) instead.");
+        return _axes.at(0);
+    }
+
+    //! Return the axis at the specified position
+    cpplot::axis axis(const grid_location& location) const {
+        if (location.row >= _grid.rows) throw std::runtime_error("Row index out of bounds");
+        if (location.col >= _grid.cols) throw std::runtime_error("Column index out of bounds");
+        return _axes.at(location.row*_grid.cols + location.col);
     }
 
     //! Add a title to this figure
-    bool set_title(const std::string& title) {
-        return detail::invoke(_fig, "suptitle", detail::Args::from(title));
+    void set_title(const std::string& title) {
+        detail::pycall(_fig, "suptitle", args::from(title));
     }
 
-    //! Return the axis at the given row and column
-    Axis& at(const AxisLocation& loc) {
-        if (loc.row >= _grid.ny) throw std::runtime_error("row index out of bounds.");
-        if (loc.col >= _grid.nx) throw std::runtime_error("column index out of bounds.");
-        return _axes.at(loc.row*_grid.nx + loc.col);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool plot(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its plot function.");
-        return _axes[0].plot(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool bar(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its plot function.");
-        return _axes[0].bar(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool set_image(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
-        return _axes[0].set_image(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool set_x_label(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
-        return _axes[0].set_x_label(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool set_y_label(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
-        return _axes[0].set_y_label(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool set_x_ticks(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
-        return _axes[0].set_x_ticks(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool set_y_ticks(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
-        return _axes[0].set_y_ticks(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... Args>
-    bool add_colorbar(Args&&... args) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
-        return _axes[0].add_colorbar(std::forward<Args>(args)...);
-    }
-
-    //! Convenience function for figures with a single axis (throws if multiple axes are defined)
-    template<typename... T>
-    bool add_legend(const Kwargs<T...>& kwargs = no_kwargs) {
-        if (_grid.count() > 1)
-            throw std::runtime_error("Figure has multiple axes, retrieve the desired axis and use its set_image function.");
-        return _axes[0].add_legend(kwargs);
-    }
-
-    //! Adjust the layout of how the axes are arranged (see the [Matplotlib docu] (https://matplotlib.org/stable/api/_as_gen/matplotlib.figure.Figure.subplots_adjust.html) for the supported kwargs)
-    template<typename... T>
-    bool adjust_layout(const Kwargs<T...>& kwargs) {
-        return detail::invoke(_fig, "subplots_adjust", detail::no_args, kwargs);
-    }
-
-    //! Save this figure to the given path
-    bool save_to(const std::string& path) {
-        using namespace literals;
-        return detail::invoke(_fig, "savefig", detail::Args::from(path), with(
-            "bbox_inches"_kw = "tight"
-        ));
+    //! Save this figure to the file with the given name
+    void save_to(const std::string& filename) const {
+        detail::pycall(_fig, "savefig", args::from(filename), kwargs::from(kw("bbox_inches") = "tight"));
     }
 
     //! Close this figure
-    bool close() {
-        return detail::invoke(_pyplot, "close", detail::Args::from(_id));
+    void close() {
+        detail::pycall(this->pyplot, "close", args::from(_id));
+    }
+
+    //! Return the number of axis rows in this figure
+    std::size_t rows() const {
+        return _grid.rows;
+    }
+
+    //! Return the number of axis columns in this figure
+    std::size_t cols() const {
+        return _grid.cols;
+    }
+
+    //! Get the python representation of this figure
+    pyobject get_pyobject() const {
+        return _fig;
+    }
+
+    //! Invoke a python function on the underlying figure
+    template<typename... A, typename... K>
+    pyobject py_invoke(const std::string& function,
+                       const py_args<A...>& args = no_args,
+                       const py_kwargs<K...>& kwargs = no_kwargs) {
+        return cpplot::py_invoke(_fig, function, args, kwargs);
     }
 
  private:
-    using PyObjectWrapper = detail::PyObjectWrapper;
-    friend class detail::PyPlot;
-
-    // constructor for figures with a single axis
-    explicit Figure(std::size_t id,
-                    PyObjectWrapper plt,
-                    PyObjectWrapper fig,
-                    PyObjectWrapper axis)
-    : _id{id}
-    , _grid{1, 1}
-    , _pyplot{plt}
-    , _fig{fig} {
-        _axes.push_back(Axis{plt, axis});
+    //! Set the style to use (calls pyplot.style.use(style))
+    void _set_style(const style& style) {
+        auto style_attr = pyobject::from(PyObject_GetAttrString(this->pyplot.get(), "style"));
+        if (style_attr)
+            detail::pycall(style_attr, "use", args::from(std::string{style.name}));
+        else if (style != default_style)
+            throw std::runtime_error("Could not access pyplot.style attribute for setting the requested style.");
     }
 
-    // constructor for figures with a grid of axes
-    explicit Figure(std::size_t id,
-                    PyObjectWrapper plt,
-                    PyObjectWrapper fig,
-                    std::vector<detail::PyObjectWrapper> axes,
-                    std::size_t ny,
-                    std::size_t nx)
-    : _id{id}
-    , _grid{ny, nx}
-    , _pyplot{plt}
-    , _fig{fig} {
-        if (axes.size() != _grid.count())
-            throw std::runtime_error("Number of axes does not match the given grid layout.");
-        _axes.reserve(axes.size());
-        for (std::size_t i = 0; i < axes.size(); ++i)
-            _axes.push_back(Axis{plt, axes[i]});
+    std::size_t _get_unused_id() const {
+        std::size_t id = 0;
+        while (detail::pycall(this->pyplot, "fignum_exists", args::from(id)).get() == Py_True)
+            ++id;
+        return id;
+    }
+
+    template<typename... K>
+    std::pair<pyobject, pyobject> _make_fig_and_axes(const py_kwargs<K...>& kwargs) const {
+        auto fig_ax_tuple = detail::pycall(this->pyplot, "subplots", no_args, kwargs);
+        if (!fig_ax_tuple)
+            throw std::runtime_error("Could not create figure.");
+        if (!PySequence_Check(fig_ax_tuple.get()))
+            throw std::runtime_error("Unexpected value returned from pyplot.subplots");
+        if (PySequence_Size(fig_ax_tuple.get()) != 2)
+            throw std::runtime_error("Unexpected value returned from pyplot.subplots");
+        return {
+            pyobject{PySequence_GetItem(fig_ax_tuple.get(), 0)},
+            pyobject{PySequence_GetItem(fig_ax_tuple.get(), 1)}
+        };
     }
 
     std::size_t _id;
-    Grid _grid;
-    PyObjectWrapper _pyplot;
-    PyObjectWrapper _fig;
-    std::vector<Axis> _axes;
-    std::optional<PyObjectWrapper> _image;
+    grid _grid;
+    pyobject _fig;
+    std::vector<cpplot::axis> _axes;
 };
 
 
-#ifndef DOXYGEN
-namespace detail {
+// default trait implementations
+namespace traits {
 
-    long pyobject_to_long(PyObject* pyobj) {
-        if (!PyLong_Check(pyobj))
-            throw std::runtime_error("Given object does not represent an integer");
-        return PyLong_AsLong(pyobj);
+template<typename T>
+struct image_size<std::vector<std::vector<T>>> {
+    static std::array<std::size_t, 2> get(const std::vector<std::vector<T>>& data) {
+        const std::size_t y = data.size();
+        if (y == 0)
+            return {0, 0};
+        const std::size_t x = data[0].size();
+        assert(std::all_of(data.begin(), data.end(), [&] (const auto& row) { return row.size() == x; }));
+        return {y, x};
     }
-
-    template<std::invocable<PyObject*> Visitor>
-    void visit_py_sequence(PyObject* sequence, Visitor&& visitor) {
-        if (!PySequence_Check(sequence))
-            throw std::runtime_error("Given argument is not a sequence");
-        const auto n = PySequence_Size(sequence);
-        for (Py_ssize_t i = 0; i < n; ++i)
-            visitor(PySequence_GetItem(sequence, i));
-    }
-
-    class PyPlot {
-     public:
-        static PyPlot& instance() {
-            static PyPlot plt{};
-            return plt;
-        }
-
-        Figure figure(std::size_t ny = 1, std::size_t nx = 1) {
-            if (ny == 0 || nx == 0)
-                throw std::runtime_error("Number of rows/cols must be non-zero.");
-
-            using namespace literals;
-            const std::size_t fig_id = _get_unused_fig_id();
-            auto fig_axis_tuple = invoke(_pyplot, "subplots", no_args, with("num"_kw = fig_id, "nrows"_kw = ny, "ncols"_kw = nx));
-            if (!PyTuple_Check(fig_axis_tuple))
-                throw std::runtime_error("Unexpected value returned from pyplot.subplots");
-            if (PyTuple_Size(fig_axis_tuple.get()) != 2)
-                throw std::runtime_error("Unexpected value returned from pyplot.subplots");
-
-            auto fig = pycall([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple.get(), 0)); });
-            auto axes = pycall([&] () { return Py_NewRef(PyTuple_GetItem(fig_axis_tuple.get(), 1)); });
-            if (!axes || !fig)
-                throw std::runtime_error("Error creating figure.");
-            if (nx*ny == 1)  // axes is a single axis
-                return Figure{fig_id, _pyplot, fig, axes};
-
-            std::vector<PyObjectWrapper> ax_vec;
-            ax_vec.reserve(ny*nx);
-            if (ny == 1 || nx == 1)  // axes is a 1d numpy array
-                visit_py_sequence(axes.get(), [&] (PyObject* entry) { ax_vec.emplace_back(entry); });
-            else  // axes is a 2d numpy array
-                visit_py_sequence(axes.get(), [&] (PyObject* row) {
-                    visit_py_sequence(row, [&] (PyObject* entry) { ax_vec.emplace_back(entry); });
-                });
-            if (ax_vec.size() != nx*ny)
-                throw std::runtime_error("Could not create sub-figure axes");
-
-            return Figure{fig_id, _pyplot, fig, ax_vec, ny, nx};
-        }
-
-        bool figure_exists(std::size_t id) const {
-            return invoke(_pyplot, "fignum_exists", Args::from(id)).get() == Py_True;
-        }
-
-        std::size_t number_of_active_figures() const {
-            auto result = invoke(_pyplot, "get_fignums");
-            if (!PyList_Check(result.get()))
-                throw std::runtime_error("Could not determine the number of active figures.");
-            return static_cast<std::size_t>(PyList_Size(result.get()));
-        }
-
-        void show_all(std::optional<bool> block) const {
-            using namespace literals;
-            if (block)
-                invoke(_pyplot, "show", no_args, with("block"_kw = *block));
-            else
-                invoke(_pyplot, "show", no_args);
-        }
-
-        bool use_style(const std::string& name) {
-            auto style = pycall([&] () { return PyObject_GetAttrString(_pyplot.get(), "style"); });
-            return style ? static_cast<bool>(invoke(style, "use", detail::Args::from(name))) : false;
-        }
-
-     private:
-        explicit PyPlot() {
-            _pyplot = pycall([&] () { return PyImport_ImportModule("matplotlib.pyplot"); });
-            if (!_pyplot)
-                throw std::runtime_error("Could not import matplotlib.");
-        }
-
-        std::size_t _get_unused_fig_id() {
-            std::size_t id = 0;
-            while (figure_exists(id))
-                id++;
-            return id;
-        }
-
-        PyObjectWrapper _pyplot{nullptr};
-    };
-
-}  // namespace detail
-#endif  // DOXYGEN
-
-struct AxisLayout {
-    std::size_t nrows;
-    std::size_t ncols;
 };
 
-//! Create a new figure containing a single axis
-Figure figure() {
-    return detail::PyPlot::instance().figure();
-}
+template<typename T>
+struct image_access<std::vector<std::vector<T>>> {
+    static const T& at(const std::array<std::size_t, 2>& idx, const std::vector<std::vector<T>>& data) {
+        return data.at(idx[0]).at(idx[1]);
+    }
+};
 
-//! Create a new figure with multiple axes arranged in the given number of rows & columns
-Figure figure(const AxisLayout& layout) {
-    return detail::PyPlot::instance().figure(layout.nrows, layout.ncols);
-}
+template<std::ranges::range R>
+struct to_pyobject<R> {
+    static PyObject* from(const R& range) {
+        detail::pycontext{};
+        auto list = PyList_New(std::size(range));
+        std::ranges::for_each(range, [&, i=0] (const auto& value) mutable {
+            PyList_SetItem(list, i++, detail::to_pyobject(value).release());
+        });
+        return list;
+    }
+};
 
-//! Show all figures
-void show_all_figures(std::optional<bool> block = {}) {
-    detail::PyPlot::instance().show_all(block);
-}
-
-//! Set a matplotlib style to be used in newly created figures
-bool set_style(const std::string& name) {
-    return detail::PyPlot::instance().use_style(name);
-}
+}  // namespace traits
 
 }  // namespace cpplot
