@@ -52,7 +52,7 @@ int main() {
     image_and_plot.axis({0, 1}).plot(x_values, sine_values);
 
     // let's have a look at all the figures we created
-    show();
+    // show();
 
     return 0;
 }

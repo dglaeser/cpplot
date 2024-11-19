@@ -18,7 +18,11 @@ std::string as_string(const cpplot::pyobject& obj) {
     if (!PyUnicode_Check(obj.get()))
         throw std::runtime_error("Given object does not represent a string");
 
-    std::size_t length = static_cast<std::size_t>(PyUnicode_GET_LENGTH(obj.get()));
+    auto str_length = PyUnicode_GetLength(obj.get());
+    if (str_length < 0)
+        throw std::runtime_error("Could not get string length");
+
+    std::size_t length = static_cast<std::size_t>(str_length);
     std::wstring wresult(length, wchar_t{' '});
     PyUnicode_AsWideChar(obj.get(), wresult.data(), length);
 
