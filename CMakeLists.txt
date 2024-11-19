@@ -8,7 +8,7 @@ option(CPPLOT_DISABLE_PYTHON_DEBUG_BUILD "If set to true, python is included w/o
 include(GNUInstallDirs)
 find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development)
 add_library(cpplot INTERFACE)
-target_compile_features(cpplot INTERFACE cxx_std_23)
+target_compile_features(cpplot INTERFACE cxx_std_20)
 target_link_libraries(cpplot INTERFACE Python::Python)
 if (CPPLOT_DISABLE_PYTHON_DEBUG_BUILD)
     target_compile_definitions(cpplot INTERFACE CPPLOT_DISABLE_PYTHON_DEBUG_BUILD)
