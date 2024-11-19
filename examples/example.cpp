@@ -17,8 +17,8 @@ int main() {
     // let's make a single figure and plot a sine function (using the data point indices on the x-axis)
     figure sine_default_x_axis;
     sine_default_x_axis.axis().plot(sine_values, kwargs::from("label"_kw = "sine"));
-    sine_default_x_axis.set_title("The sine function");
     sine_default_x_axis.axis().add_legend();
+    sine_default_x_axis.set_title("The sine function");
 
     // let's do the same, but use the actual x values on the x axis and use a cool style
     figure sine{style{.name = "ggplot"}};
@@ -30,25 +30,25 @@ int main() {
     stacked.axis_at({.row = 0, .col = 0}).plot(sine_values);
     stacked.axis_at({.row = 1, .col = 0}).plot(x_values, sine_values);
 
-    // ... or side-by-side (also, let's add titles this time)
-    figure side_by_side{{1, 2}};
+    // ... or side-by-side (also, let's add axis titles this time)
+    figure side_by_side{{.rows = 1, .cols = 2}};
     side_by_side.axis_at({0, 0}).plot(sine_values);
     side_by_side.axis_at({0, 1}).plot(x_values, sine_values);
     side_by_side.axis_at({0, 0}).set_title("sine");
     side_by_side.axis_at({0, 1}).set_title("sin(x)");
     side_by_side.set_title("2 sine plots");
 
-    // finally, let's plot an image next to the sine function
-    auto image_and_plot = figure({1, 2}, [] (const grid_location& loc) {
+    // finally, let's plot an image next to the sine function and use a different style for the plot & image
+    figure image_and_plot{{1, 2}, [] (const grid_location& loc) -> style {
         return loc.col == 0
             ? default_style  // for images this is better than ggplot
             : style{.name = "ggplot"};
-    });
-    image_and_plot.axis_at({0, 0}).imshow(std::vector<std::vector<double>>{
-        {1, 2, 3},
-        {4, 5, 6},
-        {7, 8, 9},
-    }, no_kwargs, {.add_colorbar = true});
+    }};
+    // Images can be 2d ranges, which are supported out-of-the-box. If you have a custom image type, you may
+    // specialze the `image_size` and `image_access` traits defined in the namespace `cpplot::traits`
+    const std::vector<std::vector<double>> image{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
+    // ... with imshow, we can directly add a colorbar to the axis, and via the kwargs we can set the color map
+    image_and_plot.axis_at({0, 0}).imshow(image, no_kwargs, {.add_colorbar = true});
     image_and_plot.axis_at({0, 1}).plot(x_values, sine_values);
 
     // let's have a look at all the figures we created
