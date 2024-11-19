@@ -192,6 +192,11 @@ class pyobject {
         return pyobject{obj};
     }
 
+    static pyobject none() {
+        detail::pycontext{};
+        return pyobject{Py_None};
+    }
+
     PyObject* get() const noexcept { return _obj; }
     PyObject* release() noexcept { PyObject* tmp = _obj; _obj = nullptr; return tmp; }
     operator bool() const noexcept { return static_cast<bool>(_obj); }
@@ -322,23 +327,19 @@ struct kwarg<none> {
     }
 };
 
-//! Factory to create arguments passed to python functions
-struct args {
-    template<typename... T>
-    static constexpr auto from(T&&... t) noexcept {
-        return py_args{std::forward_as_tuple(std::forward<T>(t)...)};
-    }
-};
+//! Factory function to create arguments passed to python functions
+template<typename... T>
+inline constexpr auto args(T&&... t) {
+    return py_args{std::forward_as_tuple(std::forward<T>(t)...)};
+}
 
 //! Factory to create keyword arguments
-struct kwargs {
-    template<concepts::kwarg... T>
-    static constexpr auto from(T&&... t) noexcept {
-        return py_kwargs{std::forward_as_tuple(std::forward<T>(t)...)};
-    }
-};
+template<concepts::kwarg... T>
+inline constexpr auto kwargs(T&&... t) {
+    return py_kwargs{std::forward_as_tuple(std::forward<T>(t)...)};
+}
 
-//! Helper function to create keyword arguments
+//! Helper function to create a keyword argument
 inline kwarg<none> kw(std::string name) noexcept {
     return {std::move(name)};
 }
@@ -404,7 +405,7 @@ class axis {
     //! Plot the given y-values against the given x-values
     template<std::ranges::range X, std::ranges::range Y, typename... K>
     void plot(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
-        detail::pycall(_ax, "plot", args::from(std::forward<X>(x), std::forward<Y>(y)), kwargs);
+        detail::pycall(_ax, "plot", args(std::forward<X>(x), std::forward<Y>(y)), kwargs);
     }
 
     //! Show the given image on this axis
@@ -413,9 +414,9 @@ class axis {
                 const py_kwargs<K...>& kwargs = no_kwargs,
                 const imshow_options& opts = {}) {
                     // TODO: image_to_pyobject?
-        auto image = detail::pycall(_ax, "imshow", args::from(img), kwargs);
+        auto image = detail::pycall(_ax, "imshow", args(img), kwargs);
         if (image && opts.add_colorbar)
-            detail::pycall(detail::plt{}.pyplot, "colorbar", no_args, kwargs::from(
+            detail::pycall(detail::plt{}.pyplot, "colorbar", no_args, cpplot::kwargs(
                 kw("mappable") = image,
                 kw("ax") = _ax
             ));
@@ -435,36 +436,36 @@ class axis {
     void bar(X&& x, Y&& y,
              const py_kwargs<K...>& kwargs = no_kwargs,
              const bar_options& opts = {}) {
-        auto rectangles = detail::pycall(_ax, "bar", args::from(x, y), kwargs);
+        auto rectangles = detail::pycall(_ax, "bar", args(x, y), kwargs);
         if (rectangles && opts.add_bar_labels)
-            detail::pycall(_ax, "bar_label", args::from(rectangles));
+            detail::pycall(_ax, "bar_label", args(rectangles));
     }
 
     //! Add a title to this axis
     void set_title(const std::string& title) {
-        detail::pycall(_ax, "set_title", args::from(title));
+        detail::pycall(_ax, "set_title", args(title));
     }
 
     //! Set the x-axis ticks
     template<std::ranges::range X, typename... K>
     void set_x_ticks(X&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
-        detail::pycall(_ax, "set_xticks", args::from(ticks), kwargs);
+        detail::pycall(_ax, "set_xticks", args(ticks), kwargs);
     }
 
     //! Set the y-axis ticks
     template<std::ranges::range Y, typename... K>
     void set_y_ticks(Y&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
-        detail::pycall(_ax, "set_yticks", args::from(ticks), kwargs);
+        detail::pycall(_ax, "set_yticks", args(ticks), kwargs);
     }
 
     //! Set the x-axis label
     void set_x_label(const std::string& label) {
-        detail::pycall(_ax, "set_xlabel", args::from(label), py_kwargs<>{});
+        detail::pycall(_ax, "set_xlabel", args(label), py_kwargs<>{});
     }
 
     //! Set the y-axis label
     void set_y_label(const std::string& label) {
-        detail::pycall(_ax, "set_ylabel", args::from(label), py_kwargs<>{});
+        detail::pycall(_ax, "set_ylabel", args(label), py_kwargs<>{});
     }
 
     //! Add a legend to this axis (invokes pyplot.Axes.legend(kwargs))
@@ -514,7 +515,7 @@ class figure : private detail::plt {
     : _id{_get_unused_id()}
     , _grid{1, 1} {
         _set_style(style);
-        auto [fig, axes] = _make_fig_and_axes(kwargs::from(kw("num") = _id));
+        auto [fig, axes] = _make_fig_and_axes(kwargs(kw("num") = _id));
         _fig = fig;
         _axes.push_back(cpplot::axis{axes});
         _set_style(default_style);
@@ -525,12 +526,12 @@ class figure : private detail::plt {
     : _id{_get_unused_id()}
     , _grid{std::move(grid)} {
         _set_style(style);
-        _fig = detail::pycall(this->pyplot, "figure", no_args, kwargs::from(kw("num") = _id));
+        _fig = detail::pycall(this->pyplot, "figure", no_args, kwargs(kw("num") = _id));
         std::size_t flat_index = 1;
         for (std::size_t row = 0; row < _grid.rows; ++row) {
             for (std::size_t col = 0; col < _grid.cols; ++col)
                 _axes.push_back(cpplot::axis{
-                    detail::pycall(_fig, "add_subplot", args::from(_grid.rows, _grid.cols, flat_index++))
+                    detail::pycall(_fig, "add_subplot", args(_grid.rows, _grid.cols, flat_index++))
                 });
         }
         _set_style(default_style);
@@ -542,13 +543,13 @@ class figure : private detail::plt {
     figure(grid grid, F&& style_callback)
     : _id{_get_unused_id()}
     , _grid{std::move(grid)} {
-        _fig = detail::pycall(this->pyplot, "figure", no_args, kwargs::from(kw("num") = _id));
+        _fig = detail::pycall(this->pyplot, "figure", no_args, kwargs(kw("num") = _id));
         std::size_t flat_index = 1;
         for (std::size_t row = 0; row < _grid.rows; ++row) {
             for (std::size_t col = 0; col < _grid.cols; ++col) {
                 _set_style(style_callback(grid_location{.row = row, .col = col}));
                 _axes.push_back(cpplot::axis{
-                    detail::pycall(_fig, "add_subplot", args::from(_grid.rows, _grid.cols, flat_index++))
+                    detail::pycall(_fig, "add_subplot", args(_grid.rows, _grid.cols, flat_index++))
                 });
             }
         }
@@ -571,17 +572,17 @@ class figure : private detail::plt {
 
     //! Add a title to this figure
     void set_title(const std::string& title) {
-        detail::pycall(_fig, "suptitle", args::from(title));
+        detail::pycall(_fig, "suptitle", args(title));
     }
 
     //! Save this figure to the file with the given name
     void save_to(const std::string& filename) const {
-        detail::pycall(_fig, "savefig", args::from(filename), kwargs::from(kw("bbox_inches") = "tight"));
+        detail::pycall(_fig, "savefig", args(filename), kwargs(kw("bbox_inches") = "tight"));
     }
 
     //! Close this figure
     void close() {
-        detail::pycall(this->pyplot, "close", args::from(_id));
+        detail::pycall(this->pyplot, "close", args(_id));
     }
 
     //! Return the number of axis rows in this figure
@@ -612,14 +613,14 @@ class figure : private detail::plt {
     void _set_style(const style& style) {
         auto style_attr = pyobject::from(PyObject_GetAttrString(this->pyplot.get(), "style"));
         if (style_attr)
-            detail::pycall(style_attr, "use", args::from(std::string{style.name}));
+            detail::pycall(style_attr, "use", args(std::string{style.name}));
         else if (style != default_style)
             throw std::runtime_error("Could not access pyplot.style attribute for setting the requested style.");
     }
 
     std::size_t _get_unused_id() const {
         std::size_t id = 0;
-        while (detail::pycall(this->pyplot, "fignum_exists", args::from(id)).get() == Py_True)
+        while (detail::pycall(this->pyplot, "fignum_exists", args(id)).get() == Py_True)
             ++id;
         return id;
     }

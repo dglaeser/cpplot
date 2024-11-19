@@ -16,13 +16,13 @@ int main() {
 
     // let's make a single figure and plot a sine function (using the data point indices on the x-axis)
     figure sine_default_x_axis;
-    sine_default_x_axis.axis().plot(sine_values, kwargs::from("label"_kw = "sine"));
+    sine_default_x_axis.axis().plot(sine_values, kwargs("label"_kw = "sine"));
     sine_default_x_axis.axis().add_legend();
     sine_default_x_axis.set_title("The sine function");
 
     // let's do the same, but use the actual x values on the x axis and use a cool style
     figure sine{style{.name = "ggplot"}};
-    sine.axis().plot(x_values, sine_values, kwargs::from("label"_kw = "sin(x)"));
+    sine.axis().plot(x_values, sine_values, kwargs("label"_kw = "sin(x)"));
     sine.axis().add_legend();
 
     // let's plot the two below each other
@@ -45,25 +45,25 @@ int main() {
             : style{.name = "ggplot"};
     }};
     // Images can be 2d ranges, which are supported out-of-the-box. If you have a custom image type, you may
-    // specialze the `image_size` and `image_access` traits defined in the namespace `cpplot::traits`
+    // specialize the `image_size` and `image_access` traits defined in the namespace `cpplot::traits`
     const std::vector<std::vector<double>> image{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};
     // ... with imshow, we can directly add a colorbar to the axis, and via the kwargs we can set the color map
     image_and_plot.axis_at({0, 0}).imshow(image, no_kwargs, {.add_colorbar = true});
     image_and_plot.axis_at({0, 1}).plot(x_values, sine_values);
 
     // If you need some feature that is not exposed via the libary, you can also let it invoke python functions
-    image_and_plot.py_invoke("text", no_args, kwargs::from(
+    image_and_plot.py_invoke("text", no_args, kwargs(
         "x"_kw = 0.5,
         "y"_kw = 0.5,
         "s"_kw = "this is text"
     ));  // ... adds text over the figure
     image_and_plot.axis_at({0, 1}).py_invoke(
         "fill",
-        args::from(
+        args(
             std::vector{0.0, 1.0, 1.0, 0.0},  // x-coordinates
             std::vector{0.0, 0.0, 1.0, 1.0}   // y-coordinates
         ),
-        kwargs::from(
+        kwargs(
             "edgecolor"_kw = "k",
             "fill"_kw = false
         )
