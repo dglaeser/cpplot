@@ -13,4 +13,4 @@ function (cpplot_add_test NAME SOURCE)
     add_test(NAME ${NAME} COMMAND ./${NAME})
 endfunction ()
 
-cpplot_add_test(test_suite test_suite.cpp)
+cpplot_add_test(tests tests.cpp)
