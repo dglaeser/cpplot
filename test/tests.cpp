@@ -84,7 +84,7 @@ int main() {
 
     "fig_title"_test = [] () {
         figure f;
-        f.set_title("some_title");
+        expect(f.set_title("some_title"));
         expect(eq(
             as_string(f.py_invoke("get_suptitle")),
             std::string{"some_title"}
@@ -93,88 +93,88 @@ int main() {
 
     "plot_values_default_x_axis"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().plot(std::vector{3.0, 4.0, 5.0});
+            expect(figure{}.axis().plot(std::vector{3.0, 4.0, 5.0}));
         }));
     };
 
     "plot_values"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().plot(
+            expect(figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0}
-            );
+            ));
         }));
     };
 
     "plot_values_from_list"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().plot(
+            expect(figure{}.axis().plot(
                 std::list{1.0, 2.0, 3.0},
                 std::list{3.0, 4.0, 5.0}
-            );
+            ));
         }));
     };
 
     "plot_values_with_label"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().plot(
+            expect(figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
                 kwargs(kw("label") = "some_label")
-            );
+            ));
         }));
     };
 
     "plot_values_default_x_axis_with_kwargs"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().plot(
+            expect(figure{}.axis().plot(
                 std::vector{3.0, 4.0, 5.0},
                 kwargs("label"_kw = "some_label")
-            );
+            ));
         }));
     };
 
     "plot_values_with_label_from_string"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().plot(
+            expect(figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
                 kwargs("label"_kw = std::string{"some_label"})
-            );
+            ));
         }));
     };
 
     "plot_values_with_color"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().plot(
+            expect(figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
                 kwargs("color"_kw = "blue")
-            );
+            ));
         }));
     };
 
     "bar_plot"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().bar(std::vector<int>{1, 2, 3});
+            expect(figure{}.axis().bar(std::vector<int>{1, 2, 3}));
         }));
     };
 
     "bar_plot_with_x_axis"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().bar(
+            expect(figure{}.axis().bar(
                 std::vector<std::string>{"a", "b", "c"},
                 std::vector<int>{3, 2, 4}
-            );
+            ));
         }));
     };
 
     "bar_plot_with_x_axis_mismatch__should_raise_pyerror"_test = [&] () {
         expect(raises_pyerror([] () {
-            figure{}.axis().bar(
+            expect(!figure{}.axis().bar(
                 std::vector<std::string>{"a", "b"},
                 std::vector<int>{3, 2, 4}
-            );
+            ));
         }));
     };
 
@@ -203,16 +203,13 @@ int main() {
 
     "plot_image_from_range"_test = [&] () {
         expect(!raises_pyerror([] () {
-            auto fig = figure();
-            fig.axis().imshow(
-                std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
-            );
+            expect(figure{}.axis().imshow(std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}));
         }));
     };
 
     "plot_image"_test = [&] () {
         expect(!raises_pyerror([] () {
-            figure{}.axis().imshow(test_image{});
+           expect(figure{}.axis().imshow(test_image{}));
         }));
     };
 
