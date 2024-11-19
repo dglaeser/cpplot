@@ -63,11 +63,18 @@ int main() {
             std::vector{0.0, 1.0, 1.0, 0.0},  // x-coordinates
             std::vector{0.0, 0.0, 1.0, 1.0}   // y-coordinates
         ),
-        kwargs(
-            "edgecolor"_kw = "k",
-            "fill"_kw = false
-        )
+        kwargs( "edgecolor"_kw = "k", "fill"_kw = false)
     );  // ... draws a polygon, as specified by the coordinates, over this axis
+
+    // Actually, the "fill" functionality is exposed and can be used like this:
+    figure f;
+    f.axis().imshow(std::vector<std::vector<double>>{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
+    f.axis().draw_polygon(
+        std::vector<std::array<double, 2>>{{0, 0}, {1, 0}, {1, 1}, {0, 1}},
+        kwargs( "edgecolor"_kw = "k", "facecolor"_kw = "red")
+    );
+    // polygons are passed as ranges of points, and std::array is supported as point out-of-the-box
+    // if you need support for custom point types, you may specialize the trait `cpplot::traits::point_access`.
 
     // let's have a look at all the figures we created
     // show();
