@@ -32,7 +32,7 @@ std::string as_string(const cpplot::pyobject& obj) {
 }
 
 template<std::invocable F>
-bool produces_pyerror(F&& f) {
+bool raises_pyerror(F&& f) {
     bool has_error = false;
     bool print = cpplot::detail::pyerr_observers.print_error;
     cpplot::detail::pyerr_observers.print_error = false;
@@ -90,13 +90,13 @@ int main() {
     };
 
     "plot_values_default_x_axis"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().plot(std::vector{3.0, 4.0, 5.0});
         }));
     };
 
     "plot_values"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0}
@@ -105,7 +105,7 @@ int main() {
     };
 
     "plot_values_from_list"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().plot(
                 std::list{1.0, 2.0, 3.0},
                 std::list{3.0, 4.0, 5.0}
@@ -114,7 +114,7 @@ int main() {
     };
 
     "plot_values_with_label"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
@@ -124,7 +124,7 @@ int main() {
     };
 
     "plot_values_default_x_axis_with_kwargs"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().plot(
                 std::vector{3.0, 4.0, 5.0},
                 kwargs::from("label"_kw = "some_label")
@@ -133,7 +133,7 @@ int main() {
     };
 
     "plot_values_with_label_from_string"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
@@ -143,7 +143,7 @@ int main() {
     };
 
     "plot_values_with_color"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().plot(
                 std::vector{1.0, 2.0, 3.0},
                 std::vector{3.0, 4.0, 5.0},
@@ -153,13 +153,13 @@ int main() {
     };
 
     "bar_plot"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().bar(std::vector<int>{1, 2, 3});
         }));
     };
 
     "bar_plot_with_x_axis"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().bar(
                 std::vector<std::string>{"a", "b", "c"},
                 std::vector<int>{3, 2, 4}
@@ -168,7 +168,7 @@ int main() {
     };
 
     "bar_plot_with_x_axis_mismatch"_test = [&] () {
-        expect(produces_pyerror([] () {
+        expect(raises_pyerror([] () {
             figure{}.axis().bar(
                 std::vector<std::string>{"a", "b"},
                 std::vector<int>{3, 2, 4}
@@ -177,7 +177,7 @@ int main() {
     };
 
     "bar_plots_with_labels"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             auto fig = figure{};
             fig.axis().bar(
                 std::vector<double>{0, 3, 6},
@@ -200,7 +200,7 @@ int main() {
     };
 
     "plot_image_from_range"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             auto fig = figure();
             fig.axis().imshow(
                 std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
@@ -209,13 +209,13 @@ int main() {
     };
 
     "plot_image"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure{}.axis().imshow(test_image{});
         }));
     };
 
     "axis_title"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             auto fig = figure();
             fig.set_title("axis");
         }));
@@ -230,7 +230,7 @@ int main() {
     };
 
     "figure_matrix_single_row"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure fig_matrix{{1, 2}};
             fig_matrix.axis({0, 0}).imshow(std::vector<std::vector<double>>{
                 {1, 2, 3},
@@ -251,13 +251,13 @@ int main() {
     };
 
     "figure_matrix_quadratic"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure fig_matrix{{.rows = 2, .cols = 2}};
         }));
     };
 
     "figure_matrix_single_column"_test = [&] () {
-        expect(!produces_pyerror([] () {
+        expect(!raises_pyerror([] () {
             figure fig_matrix{{2, 1}};
         }));
     };
