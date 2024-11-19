@@ -563,7 +563,7 @@ class figure : private detail::plt {
     }
 
     //! Return the axis at the specified position
-    cpplot::axis axis(const grid_location& location) const {
+    cpplot::axis axis_at(const grid_location& location) const {
         if (location.row >= _grid.rows) throw std::runtime_error("Row index out of bounds");
         if (location.col >= _grid.cols) throw std::runtime_error("Column index out of bounds");
         return _axes.at(location.row*_grid.cols + location.col);
