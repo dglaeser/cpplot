@@ -46,22 +46,29 @@ namespace detail {
     template<typename T>
     inline constexpr bool is_complete = !decltype(is_incomplete(std::declval<T*>()))::value;
 
-    template<typename T>
-    using image_value_t = std::remove_cvref_t<decltype(traits::image_access<T>::at(std::array<std::size_t, 2>{}, std::declval<const T>()))>;
-
 }  // namespace detail
 #endif  // DOXYGEN
 
 namespace concepts {
 
 template<typename T>
-concept image = detail::is_complete<traits::image_size<T>>
+concept scalar = std::floating_point<std::remove_cvref_t<T>> or std::integral<std::remove_cvref_t<T>>;
+
+template<typename T>
+concept range_2d = std::ranges::range<T>
+    and std::ranges::range<std::ranges::range_value_t<T>>
+    and not std::ranges::range<std::ranges::range_value_t<std::ranges::range_value_t<T>>>;
+
+template<typename T>
+concept as_image = detail::is_complete<traits::image_size<T>>
     and detail::is_complete<traits::image_access<T>>
     and requires(const T& t) {
         { traits::image_size<T>::get(t) } -> std::same_as<std::array<std::size_t, 2>>;
-        { traits::image_access<T>::at(std::array<std::size_t, 2>{}, t) };
-        std::floating_point<detail::image_value_t<T>> or std::integral<detail::image_value_t<T>>;
+        { traits::image_access<T>::at(std::array<std::size_t, 2>{}, t) } -> scalar;
     };
+
+template<typename T>
+concept image = range_2d<T> or as_image<T>;
 
 template<typename T>
 concept to_pyobject = detail::is_complete<traits::to_pyobject<T>>
@@ -666,11 +673,28 @@ template<std::ranges::range R>
 struct to_pyobject<R> {
     static PyObject* from(const R& range) {
         detail::pycontext{};
-        auto list = PyList_New(std::size(range));
+        auto list = PyList_New(std::ranges::size(range));
         std::ranges::for_each(range, [&, i=0] (const auto& value) mutable {
             PyList_SetItem(list, i++, detail::to_pyobject(value).release());
         });
         return list;
+    }
+};
+
+template<concepts::as_image T>
+    requires(!concepts::range_2d<T>)  // because in that case the range specialization is taken
+struct to_pyobject<T> {
+    static PyObject* from(const T& img) {
+        detail::pycontext{};
+        const auto size = image_size<T>::get(img);
+        auto py_image = PyList_New(size[0]);
+        for (std::size_t row = 0; row < size[0]; ++row) {
+            auto py_row = PyList_New(size[1]);
+            for (std::size_t col = 0; col < size[1]; ++col)
+                PyList_SetItem(py_row, col, detail::to_pyobject(image_access<T>::at({row, col}, img)).release());
+            PyList_SetItem(py_image, row, py_row);
+        }
+        return py_image;
     }
 };
 

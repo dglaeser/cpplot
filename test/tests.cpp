@@ -43,6 +43,35 @@ bool produces_pyerror(F&& f) {
     return has_error;
 }
 
+
+struct test_image {
+    static constexpr std::size_t rows = 2;
+    static constexpr std::size_t cols = 3;
+    std::array<std::array<int, cols>, rows> values{{
+        {1, 2, 3},
+        {4, 5, 6}
+    }};
+};
+
+namespace cpplot::traits {
+
+template<>
+struct image_size<test_image> {
+    static constexpr std::array<std::size_t, 2> get(const test_image& img) {
+        return {img.rows, img.cols};
+    }
+};
+
+template<>
+struct image_access<test_image> {
+    static constexpr auto at(const std::array<std::size_t, 2>& idx, const test_image& img) {
+        return img.values.at(idx[0]).at(idx[1]);
+    }
+};
+
+}  // namespace cpplot::traits
+
+
 int main() {
     using namespace cpplot;
     using namespace cpplot::literals;
@@ -170,12 +199,18 @@ int main() {
         }));
     };
 
-    "plot_image"_test = [&] () {
+    "plot_image_from_range"_test = [&] () {
         expect(!produces_pyerror([] () {
             auto fig = figure();
             fig.axis().imshow(
                 std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
             );
+        }));
+    };
+
+    "plot_image"_test = [&] () {
+        expect(!produces_pyerror([] () {
+            figure{}.axis().imshow(test_image{});
         }));
     };
 
