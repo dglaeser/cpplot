@@ -43,6 +43,35 @@ bool produces_pyerror(F&& f) {
     return has_error;
 }
 
+
+struct test_image {
+    static constexpr std::size_t rows = 2;
+    static constexpr std::size_t cols = 3;
+    std::array<std::array<int, cols>, rows> values{{
+        {1, 2, 3},
+        {4, 5, 6}
+    }};
+};
+
+namespace cpplot::traits {
+
+template<>
+struct image_size<test_image> {
+    static constexpr grid get(const test_image& img) {
+        return {.rows = img.rows, .cols = img.cols};
+    }
+};
+
+template<>
+struct image_access<test_image> {
+    static constexpr auto at(const grid_location& loc, const test_image& img) {
+        return img.values.at(loc.row).at(loc.col);
+    }
+};
+
+}  // namespace cpplot::traits
+
+
 int main() {
     using namespace cpplot;
     using namespace cpplot::literals;
@@ -170,12 +199,18 @@ int main() {
         }));
     };
 
-    "plot_image"_test = [&] () {
+    "plot_image_from_range"_test = [&] () {
         expect(!produces_pyerror([] () {
             auto fig = figure();
             fig.axis().imshow(
                 std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}
             );
+        }));
+    };
+
+    "plot_image"_test = [&] () {
+        expect(!produces_pyerror([] () {
+            figure{}.axis().imshow(test_image{});
         }));
     };
 

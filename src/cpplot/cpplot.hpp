@@ -1,13 +1,13 @@
 #include <stdexcept>
 #include <type_traits>
-#include <algorithm>
 #include <functional>
 #include <utility>
-#include <optional>
-#include <vector>
-#include <string_view>
+#include <algorithm>
 #include <concepts>
 #include <ranges>
+
+#include <string_view>
+#include <vector>
 
 
 #ifdef CPPLOT_DISABLE_PYTHON_DEBUG_BUILD
@@ -37,6 +37,18 @@ template<typename T> struct to_pyobject;
 }  // namespace traits
 
 
+//! Data structure to define a 2d grid
+struct grid {
+    std::size_t rows;
+    std::size_t cols;
+};
+
+//! Data structure for accessing entries on a 2d grid
+struct grid_location {
+    std::size_t row;
+    std::size_t col;
+};
+
 #ifndef DOXYGEN
 namespace detail {
 
@@ -46,22 +58,29 @@ namespace detail {
     template<typename T>
     inline constexpr bool is_complete = !decltype(is_incomplete(std::declval<T*>()))::value;
 
-    template<typename T>
-    using image_value_t = std::remove_cvref_t<decltype(traits::image_access<T>::at(std::array<std::size_t, 2>{}, std::declval<const T>()))>;
-
 }  // namespace detail
 #endif  // DOXYGEN
 
 namespace concepts {
 
 template<typename T>
-concept image = detail::is_complete<traits::image_size<T>>
+concept scalar = std::floating_point<std::remove_cvref_t<T>> or std::integral<std::remove_cvref_t<T>>;
+
+template<typename T>
+concept range_2d = std::ranges::range<T>
+    and std::ranges::range<std::ranges::range_value_t<T>>
+    and not std::ranges::range<std::ranges::range_value_t<std::ranges::range_value_t<T>>>;
+
+template<typename T>
+concept as_image = detail::is_complete<traits::image_size<T>>
     and detail::is_complete<traits::image_access<T>>
     and requires(const T& t) {
-        { traits::image_size<T>::get(t) } -> std::same_as<std::array<std::size_t, 2>>;
-        { traits::image_access<T>::at(std::array<std::size_t, 2>{}, t) };
-        std::floating_point<detail::image_value_t<T>> or std::integral<detail::image_value_t<T>>;
+        { traits::image_size<T>::get(t) } -> std::convertible_to<grid>;
+        { traits::image_access<T>::at(grid_location{0, 0}, t) } -> scalar;
     };
+
+template<typename T>
+concept image = range_2d<T> or as_image<T>;
 
 template<typename T>
 concept to_pyobject = detail::is_complete<traits::to_pyobject<T>>
@@ -167,7 +186,6 @@ class pyobject {
         return *this;
     }
 
-    //! Create a pyobject from a raw PyObject*, invoking PyErr_Print if it is null
     static pyobject from(PyObject* obj) {
         if (!obj)
             detail::pyerr_observers.notify();
@@ -474,18 +492,6 @@ class axis {
     pyobject _ax;
 };
 
-//! Data structure to define a grid of axes
-struct grid {
-    std::size_t rows;
-    std::size_t cols;
-};
-
-//! Data structure for accessing an axis in a grid
-struct grid_location {
-    std::size_t row;
-    std::size_t col;
-};
-
 //! Represents a pyplot style to use for a figure
 struct style {
     std::string_view name;
@@ -643,34 +649,32 @@ class figure : private detail::plt {
 // default trait implementations
 namespace traits {
 
-template<typename T>
-struct image_size<std::vector<std::vector<T>>> {
-    static std::array<std::size_t, 2> get(const std::vector<std::vector<T>>& data) {
-        const std::size_t y = data.size();
-        if (y == 0)
-            return {0, 0};
-        const std::size_t x = data[0].size();
-        assert(std::all_of(data.begin(), data.end(), [&] (const auto& row) { return row.size() == x; }));
-        return {y, x};
-    }
-};
-
-template<typename T>
-struct image_access<std::vector<std::vector<T>>> {
-    static const T& at(const std::array<std::size_t, 2>& idx, const std::vector<std::vector<T>>& data) {
-        return data.at(idx[0]).at(idx[1]);
-    }
-};
-
 template<std::ranges::range R>
 struct to_pyobject<R> {
     static PyObject* from(const R& range) {
         detail::pycontext{};
-        auto list = PyList_New(std::size(range));
+        auto list = PyList_New(std::ranges::size(range));
         std::ranges::for_each(range, [&, i=0] (const auto& value) mutable {
             PyList_SetItem(list, i++, detail::to_pyobject(value).release());
         });
         return list;
+    }
+};
+
+template<concepts::as_image T>
+    requires(!concepts::range_2d<T>)  // because in that case the range specialization is taken
+struct to_pyobject<T> {
+    static PyObject* from(const T& img) {
+        detail::pycontext{};
+        const auto grid = image_size<T>::get(img);
+        auto py_image = PyList_New(grid.rows);
+        for (std::size_t row = 0; row < grid.rows; ++row) {
+            auto py_row = PyList_New(grid.cols);
+            for (std::size_t col = 0; col < grid.cols; ++col)
+                PyList_SetItem(py_row, col, detail::to_pyobject(image_access<T>::at({.row = row, .col = col}, img)).release());
+            PyList_SetItem(py_image, row, py_row);
+        }
+        return py_image;
     }
 };
 
