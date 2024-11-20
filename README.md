@@ -25,11 +25,19 @@ int main() {
     using namespace cpplot::literals;  // for convenient creation of keyword arguments
 
     figure fig;  // this creates a figure with a single axis to which we can add plots
-    fig.axis().plot(std::views::iota(0, 100), kwargs("linestyle"_kw = "--", "color"_kw = "r"));
+    fig.axis().plot(std::vector{1, 2, 3}, kwargs("linestyle"_kw = "--", "color"_kw = "r"));
 
-    // let's make a stair plot, which currently is not exposed in C++, by invoking python directly
+    // let's make a stair plot (currently not exposed in C++) by invoking python directly
     figure fig2;
     fig2.axis().py_invoke("stairs", args(std::vector{1, 2, 3}), kwargs("fill"_kw = true));
+
+    // let's create two plots side-by-side and use a different style
+    figure fig3{{.rows = 1, .cols = 2}, style{.name = "ggplot"}};
+    fig3.axis_at({0, 0}).plot(std::vector{1, 2, 3});
+    fig3.axis_at({0, 1}).plot(std::vector{1, 2, 3});
+    fig3.axis_at({0, 0}).set_title("left plot");
+    fig3.axis_at({0, 1}).set_title("right plot");
+    fig3.set_title("figure title");
 
     // show all active figures (when the desctructor of `figure` is called, the python figure is closed)
     show();
