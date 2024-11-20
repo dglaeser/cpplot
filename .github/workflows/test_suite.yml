@@ -57,6 +57,18 @@ jobs:
   test:
     needs: sanity-checks
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        compiler: [gcc-14, clang-18]
+        include:
+          - c_compiler: gcc-14
+            compiler: gcc-14
+          - cxx_compiler: g++-14
+            compiler: gcc-14
+          - c_compiler: clang-18
+            compiler: clang-18
+          - cxx_compiler: clang++-18
+            compiler: clang-18
     steps:
       - name: checkout-repository
         uses: actions/checkout@v2
@@ -64,7 +76,9 @@ jobs:
       - uses: ./.github/actions/prepare-environment
       - name: build-tests
         run: |
-          cmake -B build
+          cmake -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
+                -DCMAKE_CXX_COMPILER=${{ matrix.cxx_compiler }} \
+                -B build
           cmake --build build
 
       - name: run-tests
