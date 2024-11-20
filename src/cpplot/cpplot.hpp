@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2024 Dennis Gläser <dennis.a.glaeser@gmail.com>
 // SPDX-License-Identifier: MIT
 
+#include <exception>
 #include <stdexcept>
+#include <source_location>
 #include <type_traits>
 #include <functional>
 #include <utility>
@@ -41,6 +43,28 @@ template<typename T> struct to_pyobject;
 
 }  // namespace traits
 
+namespace exceptions {
+
+class exception : public std::exception {
+ public:
+    explicit exception(std::string_view what, std::source_location loc = std::source_location::current()) {
+        _what = what;
+        _what += "\n";
+        _what += "\tFunction: " + std::string(loc.function_name()) + "\n";
+        _what += "\tFile:     " + std::string(loc.file_name()) + "\n";
+        _what += "\tLine:     " + std::to_string(loc.line()) + "\n";
+    }
+
+    const char* what() const noexcept override { return _what.data(); }
+
+ private:
+    std::string _what;
+};
+
+struct python_error : public exception { using exception::exception; };
+struct size_error : public exception { using exception::exception; };
+
+}  // namespace exceptions
 
 //! Data structure to define a 2d grid
 struct grid {
@@ -144,7 +168,7 @@ static struct {
  private:
     observer _observer = [] () {
         PyErr_Print();
-        throw std::runtime_error("Python error occurred");
+        throw exceptions::python_error("Python error occurred");
     };
 } pyerror_observer;
 
@@ -155,7 +179,7 @@ namespace detail {
         explicit python() {
             Py_Initialize();
             if (!Py_IsInitialized())
-                throw std::runtime_error("Could not initialize Python.");
+                throw exceptions::python_error("Could not initialize Python.");
         };
 
      public:
@@ -281,7 +305,7 @@ namespace detail {
         }, std::tuple{}, kwargs...);
 
         if (!dict)
-            throw std::runtime_error("Conversion to python dictionary failed.");
+            throw exceptions::python_error("Conversion to python dictionary failed.");
         return dict;
     }
 
@@ -304,7 +328,7 @@ namespace detail {
         plt() : pyplot{} {
             pyplot = pyobject::from(PyImport_ImportModule("matplotlib.pyplot"));
             if (!pyplot)
-                throw std::runtime_error("Could not import matplotlib.pyplot.");
+                throw exceptions::python_error("Could not import matplotlib.pyplot.");
         }
     };
 
@@ -378,7 +402,7 @@ pyobject py_invoke(const pyobject& obj,
                    const py_kwargs<K...>& kwargs = no_kwargs) {
     auto result = detail::pycall(obj, function, args, kwargs);
     if (!result)
-        throw std::runtime_error("Python function invocation unsuccessful.");
+        throw exceptions::python_error("Python function invocation unsuccessful.");
     return result;
 }
 
@@ -590,14 +614,14 @@ class figure : private detail::plt {
     //! Return the underlying axis (for figures with a single axis)
     cpplot::axis axis() const {
         if (_axes.size() > 1)
-            throw std::runtime_error("Figure contains more than one axis. Call axis(const grid_location&) instead.");
+            throw exceptions::size_error("Figure contains more than one axis. Call axis(const grid_location&) instead.");
         return _axes.at(0);
     }
 
     //! Return the axis at the specified position
     cpplot::axis axis_at(const grid_location& location) const {
-        if (location.row >= _grid.rows) throw std::runtime_error("Row index out of bounds");
-        if (location.col >= _grid.cols) throw std::runtime_error("Column index out of bounds");
+        if (location.row >= _grid.rows) throw exceptions::size_error("Row index out of bounds");
+        if (location.col >= _grid.cols) throw exceptions::size_error("Column index out of bounds");
         return _axes.at(location.row*_grid.cols + location.col);
     }
 
@@ -646,7 +670,7 @@ class figure : private detail::plt {
         if (style_attr)
             detail::pycall(style_attr, "use", args(std::string{style.name}));
         else if (style != default_style)
-            throw std::runtime_error("Could not access pyplot.style attribute for setting the requested style.");
+            throw exceptions::python_error("Could not access pyplot.style attribute for setting the requested style.");
     }
 
     std::size_t _get_unused_id() const {
@@ -660,11 +684,11 @@ class figure : private detail::plt {
     std::pair<pyobject, pyobject> _make_fig_and_axes(const py_kwargs<K...>& kwargs) const {
         auto fig_ax_tuple = detail::pycall(this->pyplot, "subplots", no_args, kwargs);
         if (!fig_ax_tuple)
-            throw std::runtime_error("Could not create figure.");
+            throw exceptions::python_error("Could not create figure.");
         if (!PySequence_Check(fig_ax_tuple.get()))
-            throw std::runtime_error("Unexpected value returned from pyplot.subplots");
+            throw exceptions::python_error("Unexpected value returned from pyplot.subplots");
         if (PySequence_Size(fig_ax_tuple.get()) != 2)
-            throw std::runtime_error("Unexpected value returned from pyplot.subplots");
+            throw exceptions::python_error("Unexpected value returned from pyplot.subplots");
         return {
             pyobject{PySequence_GetItem(fig_ax_tuple.get(), 0)},
             pyobject{PySequence_GetItem(fig_ax_tuple.get(), 1)}
