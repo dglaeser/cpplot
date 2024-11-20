@@ -209,6 +209,12 @@ int main() {
         }));
     };
 
+    "plot_histogram"_test = [&] () {
+        expect(!raises_pyerror([] () {
+            expect(figure{}.axis().hist(std::vector<int>{0, 1, 2, 10, 11, 12}, kwargs("bins"_kw = 3)));
+        }));
+    };
+
     "plot_image_from_range"_test = [&] () {
         expect(!raises_pyerror([] () {
             expect(figure{}.axis().imshow(std::vector<std::vector<int>>{{1, 2, 3}, {3, 4, 5}}));

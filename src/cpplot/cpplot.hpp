@@ -419,6 +419,12 @@ class axis {
         return detail::pycall(_ax, "plot", args(std::forward<X>(x), std::forward<Y>(y)), kwargs);
     }
 
+    //! Plot a histogram on this axis
+    template<std::ranges::range X, typename... K>
+    pyobject hist(X&& x, const py_kwargs<K...>& kwargs = no_kwargs) {
+        return detail::pycall(_ax, "hist", args(std::forward<X>(x)), kwargs);
+    }
+
     //! Show the given image on this axis
     template<concepts::image I, typename... K>
     pyobject imshow(I&& img,
