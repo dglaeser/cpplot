@@ -37,6 +37,11 @@ jobs:
 
       - name: test-readme-application  # also tests support for cmake's FetchContent
         run: |
+          CPPLOT_SHA=${{ github.head_ref }}
+          if [[ -z "${{github.head_ref}}" ]]; then
+            CPPLOT_SHA=${{ github.sha }}
+          fi
+          echo "Using cpplot sha: ${CPPLOT_SHA}"
           mkdir readme_test && cd readme_test && mv ../main.cpp .
           echo "cmake_minimum_required(VERSION 3.18)" >> CMakeLists.txt
           echo "project(cpplot_test)" >> CMakeLists.txt
@@ -46,7 +51,7 @@ jobs:
           echo "FetchContent_Declare(" >> CMakeLists.txt
           echo "    cpplot" >> CMakeLists.txt
           echo "    GIT_REPOSITORY https://github.com/dglaeser/cpplot.git" >> CMakeLists.txt
-          echo "    GIT_TAG ${{ github.head_ref }}" >> CMakeLists.txt
+          echo "    GIT_TAG ${CPPLOT_SHA}" >> CMakeLists.txt
           echo ")" >> CMakeLists.txt
           echo "FetchContent_MakeAvailable(cpplot)" >> CMakeLists.txt
           echo "add_executable(main main.cpp)" >> CMakeLists.txt
