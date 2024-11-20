@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2024 Dennis Gläser <dennis.a.glaeser@gmail.com>
+# SPDX-License-Identifier: MIT
+
 name: test-suite
 
 on:
@@ -60,7 +63,6 @@ jobs:
           echo "enable_testing()" >> CMakeLists.txt
           echo "add_subdirectory(test)" >> CMakeLists.txt
 
-      # install of make can be omitted once the container provides it per default
       - name: build-tests
         run: |
           cmake -B build

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2024 Dennis Gläser <dennis.a.glaeser@gmail.com>
+SPDX-License-Identifier: MIT
+-->
+
 `cpplot` is a small single-header C++-library that wraps Python's `matplotlib` for easy creation of plots.
 To use it, simply
 

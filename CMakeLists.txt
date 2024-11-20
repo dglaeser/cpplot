@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2024 Dennis Gläser <dennis.a.glaeser@gmail.com>
+# SPDX-License-Identifier: MIT
+
 cmake_minimum_required(VERSION 3.18)
 
 project(cpplot VERSION 0.1)
