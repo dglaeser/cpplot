@@ -59,10 +59,9 @@ jobs:
       - name: checkout-repository
         uses: actions/checkout@v2
 
-      # install of make can be omitted once the container provides it per default
       - name: build-tests
         run: |
-          cmake -DCPPLOT_DISABLE_PYTHON_DEBUG_BUILD=ON -B build
+          cmake -B build
           cmake --build build
 
       - name: run-tests
@@ -103,3 +102,37 @@ jobs:
 
       - name: run-tests
         run: cd build && ctest --output-on-failure
+
+  test-as-installed-package:
+    needs: sanity-checks
+    runs-on: ubuntu-22.04
+    steps:
+      - name: install-dependencies
+        run: |
+          sudo apt install cmake python3 python3-dev python3-pip
+          python3 -m pip install matplotlib
+
+      - name: checkout-repository
+        uses: actions/checkout@v2
+
+      - name: install-library
+        run: |
+          cmake -DCPPLOT_INCLUDE_TESTS=OFF -DCPPLOT_INCLUDE_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=$(pwd)/_install -B build
+          cmake --build build
+          cmake --install build
+
+      - name: generate-test-project
+        run: |
+          mkdir installation_test && cd installation_test && mv ../test .
+          echo "cmake_minimum_required(VERSION 3.18)" > CMakeLists.txt
+          echo "project(cpplot_installation_test)" >> CMakeLists.txt
+          echo "find_package(cpplot REQUIRED)" >> CMakeLists.txt
+          echo "enable_testing()" >> CMakeLists.txt
+          echo "add_subdirectory(test)" >> CMakeLists.txt
+
+      - name: build-and-run-tests
+        run: |
+          cd installation_test
+          cmake -Dcpplot_ROOT=../_install -B build
+          cmake --build build
+          cd build && ctest --output-on-failure
