@@ -16,7 +16,39 @@ on:
   workflow_call:
 
 jobs:
+  sanity-checks:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: checkout-repository
+        uses: actions/checkout@v2
+
+      - name: test-readme-code  # also tests support for cmake's FetchContent
+        run: |
+          sudo apt install cmake python3 python3-dev python3-pip
+          python3 -m pip install matplotlib
+          echo "with open('main.cpp', 'w') as main_file:" >> _extract.py
+          echo "    main_file.write(open('README.md').read().split('\`\`\`cpp')[1].split('\`\`\`')[0])" >> _extract.py
+          python3 _extract.py
+          echo "Wrote the following test main file"
+          cat main.cpp
+          mkdir readme_test && cd readme_test && mv ../main.cpp .
+          echo "cmake_minimum_required(VERSION 3.18)" >> CMakeLists.txt
+          echo "project(cpplot_test)" >> CMakeLists.txt
+          echo "set(CPPLOT_INCLUDE_EXAMPLES OFF)" >> CMakeLists.txt
+          echo "set(CPPLOT_INCLUDE_TESTS OFF)" >> CMakeLists.txt
+          echo "include(FetchContent)" >> CMakeLists.txt
+          echo "FetchContent_Declare(" >> CMakeLists.txt
+          echo "    cpplot" >> CMakeLists.txt
+          echo "    GIT_REPOSITORY https://github.com/dglaeser/cpplot.git" >> CMakeLists.txt
+          echo "    GIT_TAG ${{ github.head_ref }}" >> CMakeLists.txt
+          echo ")" >> CMakeLists.txt
+          echo "FetchContent_MakeAvailable(cpplot)" >> CMakeLists.txt
+          echo "add_executable(main main.cpp)" >> CMakeLists.txt
+          echo "target_link_libraries(main PRIVATE cpplot::cpplot)" >> CMakeLists.txt
+          cmake -B build && cd build && make && ./main
+
   test:
+    needs: sanity-checks
     runs-on: ubuntu-22.04
     steps:
       - name: install-dependencies
@@ -37,6 +69,7 @@ jobs:
         run: cd build && ctest --output-on-failure
 
   test-as-submodule:
+    needs: sanity-checks
     runs-on: ubuntu-22.04
     steps:
       - name: install-dependencies
