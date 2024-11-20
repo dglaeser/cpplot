@@ -462,10 +462,10 @@ class axis {
         return rectangles;
     }
 
-    //! Draw a filled polyon onto this axis
+    //! Draw a polygon by connecting the points in the given range and fill its interior
     template<std::ranges::forward_range R, typename... K>
         requires(concepts::point_2d<std::ranges::range_value_t<R>>)
-    pyobject draw_polygon(R&& corners, const py_kwargs<K...>& kwargs = no_kwargs) {
+    pyobject fill(R&& corners, const py_kwargs<K...>& kwargs = no_kwargs) {
         return detail::pycall(_ax, "fill", args(
             corners | std::views::transform([] <typename P> (const P& point) { return traits::point_access<P, 0>::get(point); }),
             corners | std::views::transform([] <typename P> (const P& point) { return traits::point_access<P, 1>::get(point); })

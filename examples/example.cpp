@@ -69,10 +69,10 @@ int main() {
         kwargs( "edgecolor"_kw = "k", "fill"_kw = false)
     );  // ... draws a polygon, as specified by the coordinates, over this axis
 
-    // Actually, the "fill" functionality is exposed and can be used like this:
+    // Actually, "fill" is exposed and can be used by passing in a range of points
     figure f;
     f.axis().imshow(std::vector<std::vector<double>>{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
-    f.axis().draw_polygon(
+    f.axis().fill(
         std::vector<std::array<double, 2>>{{0, 0}, {1, 0}, {1, 1}, {0, 1}},
         kwargs( "edgecolor"_kw = "k", "facecolor"_kw = "red")
     );
