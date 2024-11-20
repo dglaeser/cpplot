@@ -10,6 +10,7 @@ To use it, simply
 - use `cmake`'s `FetchContent` to pull it when configuring your project
 - copy and include `cpplot.hpp` in your project
 
+The library has no dependencies except Python itself, and `matplotlib` has to be in the Python path at runtime.
 The library exposes the classes `figure` and `axis`, which wrap the respective `matplotlib` classes and expose
 the most commonly used parts of their interfaces in C++. If you need to use functionality that is not exposed
 in the C++ wrappers, you can also explicitly trigger invocations of the desired underlying Python function.
