@@ -230,19 +230,19 @@ int main() {
         }));
     };
 
-    "draw_polygon_from_std_array"_test = [] () {
+    "fill_from_std_array"_test = [] () {
         expect(!raises_pyerror([] () {
             figure f;
             f.axis().imshow(std::vector<std::vector<int>>{{0, 1}, {2, 3}});
-            expect(f.axis().draw_polygon(std::vector<std::array<int, 2>>{{0, 0}, {1, 0}, {1, 1}, {0, 1}}));
+            expect(f.axis().fill(std::vector<std::array<int, 2>>{{0, 0}, {1, 0}, {1, 1}, {0, 1}}));
         }));
     };
 
-    "draw_polygon_from_custom_point"_test = [] () {
+    "fill_from_custom_point"_test = [] () {
         expect(!raises_pyerror([] () {
             figure f;
             f.axis().imshow(std::vector<std::vector<int>>{{0, 1}, {2, 3}});
-            expect(f.axis().draw_polygon(std::vector<test_point>{{0, 0}, {1, 0}, {1, 1}, {0, 1}}));
+            expect(f.axis().fill(std::vector<test_point>{{0, 0}, {1, 0}, {1, 1}, {0, 1}}));
         }));
     };
 
