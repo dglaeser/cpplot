@@ -4,10 +4,11 @@ SPDX-License-Identifier: MIT
 -->
 
 `cpplot` is a small single-header C++-library that wraps Python's `matplotlib` for easy creation of plots.
-To use it, simply
+To use it, you have several options:
 
 - add this repository as git submodule to yours
 - use `cmake`'s `FetchContent` to pull it when configuring your project
+- install the library locally
 - copy and include `cpplot.hpp` in your project
 
 The library has no dependencies except Python itself, and `matplotlib` has to be in the Python path at runtime.
