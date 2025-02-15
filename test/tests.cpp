@@ -212,6 +212,17 @@ int main() {
         }));
     };
 
+    "scatter_plot"_test = [&] () {
+        expect(!raises_pyerror([] () {
+            auto fig = figure{};
+            fig.axis().scatter(
+                std::vector<double>{0, 3, 6},
+                std::vector<int>{1, 2, 3},
+                kwargs("label"_kw = "numbers")
+            );
+        }));
+    };
+
     "plot_histogram"_test = [&] () {
         expect(!raises_pyerror([] () {
             expect(figure{}.axis().hist(std::vector<int>{0, 1, 2, 10, 11, 12}, kwargs("bins"_kw = 3)));

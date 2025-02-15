@@ -468,6 +468,12 @@ class axis {
         return image;
     }
 
+    //! Add a scatter plot to this axis
+    template<std::ranges::range X, std::ranges::range Y, typename... K>
+    pyobject scatter(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+        return detail::pycall(_ax, "scatter", args(x, y), kwargs);
+    }
+
     //! Add a bar plot to this axis using the data point indices on the x-axis
     template<std::ranges::sized_range Y, typename... K>
     pyobject bar(Y&& y,
