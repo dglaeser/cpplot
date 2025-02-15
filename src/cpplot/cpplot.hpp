@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2024 Dennis Gläser <dennis.a.glaeser@gmail.com>
 // SPDX-License-Identifier: MIT
 
+#pragma once
+
 #include <exception>
 #include <stdexcept>
 #include <source_location>
