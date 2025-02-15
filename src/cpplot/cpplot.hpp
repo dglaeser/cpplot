@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2024 Dennis Gläser <dennis.a.glaeser@gmail.com>
 // SPDX-License-Identifier: MIT
 
+#pragma once
+
 #include <exception>
 #include <stdexcept>
 #include <source_location>
@@ -464,6 +466,12 @@ class axis {
                 kw("ax") = _ax
             ));
         return image;
+    }
+
+    //! Add a scatter plot to this axis
+    template<std::ranges::range X, std::ranges::range Y, typename... K>
+    pyobject scatter(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+        return detail::pycall(_ax, "scatter", args(x, y), kwargs);
     }
 
     //! Add a bar plot to this axis using the data point indices on the x-axis
