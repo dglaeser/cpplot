@@ -87,6 +87,14 @@ int main() {
     using namespace cpplot;
     using namespace cpplot::literals;
 
+    "none_kwarg"_test = [&] () {
+        [[maybe_unused]] auto kws = kwargs("kwarg"_kw = cpplot::none);
+        expect(eq(
+            cpplot::detail::to_pyobject(cpplot::none),
+            cpplot::pyobject::none()
+        ));
+    };
+
     "fig_close"_test = [&] () {
         expect(eq(get_number_of_figures(), std::size_t{0}));
         figure f;  expect(eq(get_number_of_figures(), std::size_t{1}));
