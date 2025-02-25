@@ -439,26 +439,26 @@ class axis {
  public:
     //! Plot the given values against indices on the x-axis
     template<std::ranges::sized_range Y, typename... K>
-    pyobject plot(Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+    pyobject plot(const Y& y, const py_kwargs<K...>& kwargs = no_kwargs) {
         const auto x = std::views::iota(std::size_t{0}, std::ranges::size(y));
-        return plot(x, std::forward<Y>(y), kwargs);
+        return plot(x, y, kwargs);
     }
 
     //! Plot the given y-values against the given x-values
     template<std::ranges::range X, std::ranges::range Y, typename... K>
-    pyobject plot(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
-        return detail::pycall(_ax, "plot", args(std::forward<X>(x), std::forward<Y>(y)), kwargs);
+    pyobject plot(const X& x, const Y& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+        return detail::pycall(_ax, "plot", args(x, y), kwargs);
     }
 
     //! Plot a histogram on this axis
     template<std::ranges::range X, typename... K>
-    pyobject hist(X&& x, const py_kwargs<K...>& kwargs = no_kwargs) {
-        return detail::pycall(_ax, "hist", args(std::forward<X>(x)), kwargs);
+    pyobject hist(const X& x, const py_kwargs<K...>& kwargs = no_kwargs) {
+        return detail::pycall(_ax, "hist", args(x), kwargs);
     }
 
     //! Show the given image on this axis
     template<concepts::image I, typename... K>
-    pyobject imshow(I&& img,
+    pyobject imshow(const I& img,
                     const py_kwargs<K...>& kwargs = no_kwargs,
                     const imshow_options& opts = {}) {
         auto image = detail::pycall(_ax, "imshow", args(img), kwargs);
@@ -472,22 +472,22 @@ class axis {
 
     //! Add a scatter plot to this axis
     template<std::ranges::range X, std::ranges::range Y, typename... K>
-    pyobject scatter(X&& x, Y&& y, const py_kwargs<K...>& kwargs = no_kwargs) {
+    pyobject scatter(const X& x, const Y& y, const py_kwargs<K...>& kwargs = no_kwargs) {
         return detail::pycall(_ax, "scatter", args(x, y), kwargs);
     }
 
     //! Add a bar plot to this axis using the data point indices on the x-axis
     template<std::ranges::sized_range Y, typename... K>
-    pyobject bar(Y&& y,
+    pyobject bar(const Y& y,
                  const py_kwargs<K...>& kwargs = no_kwargs,
                  const bar_options& opts = {}) {
         const auto x = std::views::iota(std::size_t{0}, std::ranges::size(y));
-        return bar(x, std::forward<Y>(y), kwargs, opts);
+        return bar(x, y, kwargs, opts);
     }
 
     //! Add a bar plot to this axis
     template<std::ranges::range X, std::ranges::range Y, typename... K>
-    pyobject bar(X&& x, Y&& y,
+    pyobject bar(const X& x, const Y& y,
                  const py_kwargs<K...>& kwargs = no_kwargs,
                  const bar_options& opts = {}) {
         auto rectangles = detail::pycall(_ax, "bar", args(x, y), kwargs);
@@ -499,7 +499,7 @@ class axis {
     //! Draw a polygon by connecting the points in the given range and fill its interior
     template<std::ranges::forward_range R, typename... K>
         requires(concepts::point_2d<std::ranges::range_value_t<R>>)
-    pyobject fill(R&& corners, const py_kwargs<K...>& kwargs = no_kwargs) {
+    pyobject fill(const R& corners, const py_kwargs<K...>& kwargs = no_kwargs) {
         return detail::pycall(_ax, "fill", args(
             corners | std::views::transform([] <typename P> (const P& point) { return traits::point_access<P, 0>::get(point); }),
             corners | std::views::transform([] <typename P> (const P& point) { return traits::point_access<P, 1>::get(point); })
@@ -513,13 +513,13 @@ class axis {
 
     //! Set the x-axis ticks
     template<std::ranges::range X, typename... K>
-    pyobject set_x_ticks(X&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+    pyobject set_x_ticks(const X& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
         return detail::pycall(_ax, "set_xticks", args(ticks), kwargs);
     }
 
     //! Set the y-axis ticks
     template<std::ranges::range Y, typename... K>
-    pyobject set_y_ticks(Y&& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
+    pyobject set_y_ticks(const Y& ticks, const py_kwargs<K...>& kwargs = py_kwargs<>{}) {
         return detail::pycall(_ax, "set_yticks", args(ticks), kwargs);
     }
 
