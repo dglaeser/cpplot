@@ -302,7 +302,7 @@ namespace detail {
     template<concepts::kwarg... K> requires(sizeof...(K) > 0)
     pyobject to_pydict(K&&... kwargs) {
         std::string format = "{";
-        for ([[maybe_unused]] std::size_t i = 0; i < sizeof...(K); ++i)
+        for (std::size_t i = 0; i < sizeof...(K); ++i)
             format += "s:O,";
         format.back() = '}';
 
@@ -737,7 +737,10 @@ struct to_pyobject<T> {
         for (std::size_t row = 0; row < grid.rows; ++row) {
             auto py_row = PyList_New(grid.cols);
             for (std::size_t col = 0; col < grid.cols; ++col)
-                PyList_SetItem(py_row, col, detail::to_pyobject(image_access<T>::at({.row = row, .col = col}, img)).release());
+                PyList_SetItem(py_row, col, detail::to_pyobject(image_access<T>::at(
+                    grid_location{.row = row, .col = col},
+                    img
+                )).release());
             PyList_SetItem(py_image, row, py_row);
         }
         return py_image;
