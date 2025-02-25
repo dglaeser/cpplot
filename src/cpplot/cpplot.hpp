@@ -246,6 +246,10 @@ class pyobject {
     detail::pycontext _context;
 };
 
+//! Type to represent the absence of a value
+struct none_t {};
+inline constexpr none_t none;
+
 
 #ifndef DOXYGEN
 namespace detail {
@@ -257,6 +261,7 @@ namespace detail {
     template<typename T>
     pyobject to_pyobject(const T& t) {
         return pyobject::from(overloads{
+            [] (none_t) { return Py_None; },
             [] (bool b) { return b ? Py_True : Py_False; },
             [] (std::integral auto i) { return PyLong_FromLong(static_cast<long>(i)); },
             [] (std::unsigned_integral auto i) { return PyLong_FromSize_t(static_cast<std::size_t>(i)); },
@@ -337,9 +342,6 @@ namespace detail {
 }  // namespace detail
 #endif  // DOXYGEN
 
-//! Type to represent the absence of a value
-struct none {};
-
 //! Data structure to represent a keyword argument
 template<typename V>
 struct kwarg {
@@ -358,7 +360,7 @@ kwarg(std::string, V&&) -> kwarg<std::conditional_t<std::is_lvalue_reference_v<V
 
 //! A named keyword argument with no value specified yet
 template<>
-struct kwarg<none> {
+struct kwarg<none_t> {
     std::string name;
 
     template<typename V>
@@ -380,14 +382,14 @@ inline constexpr auto kwargs(T&&... t) {
 }
 
 //! Helper function to create a keyword argument
-inline kwarg<none> kw(std::string name) noexcept {
+inline kwarg<none_t> kw(std::string name) noexcept {
     return {std::move(name)};
 }
 
 namespace literals {
 
 //! Create a keyword argument from a string literal
-kwarg<none> operator ""_kw(const char* chars, size_t size) noexcept {
+kwarg<none_t> operator ""_kw(const char* chars, size_t size) noexcept {
     std::string n;
     n.resize(size);
     std::copy_n(chars, size, n.begin());
