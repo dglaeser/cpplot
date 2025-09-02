@@ -267,6 +267,7 @@ namespace detail {
             [] (std::unsigned_integral auto i) { return PyLong_FromSize_t(static_cast<std::size_t>(i)); },
             [] (std::floating_point auto f) { return PyFloat_FromDouble(static_cast<double>(f)); },
             [] (const char* s) { return PyUnicode_FromString(s); },
+            [] (std::string_view v) { return PyUnicode_FromStringAndSize(v.data(), v.size()); },
             [] (const std::string& s) { return PyUnicode_FromString(s.c_str()); },
             [] (const std::wstring& s) { return PyUnicode_FromWideChar(s.data(), s.size()); },
             [] (const pyobject& p) { return pyobject{p}.release(); },
